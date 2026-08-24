@@ -1,0 +1,28 @@
+{
+  "сгенерировано": "2026-08-20T12:04:23+00:00",
+  "git_head": "bc1c36a",
+  "окружение": {
+    "numpy": "2.4.6",
+    "pandas": "3.0.5",
+    "scipy": "1.17.1",
+    "эталонная_ветка": "python",
+    "numba": "0.67.0"
+  },
+  "случаи": [
+    "direction_angles_250hz",
+    "direction_angles_90hz",
+    "direction_plane",
+    "eye_layer",
+    "metrics",
+    "models",
+    "orientation",
+    "preprocess",
+    "scalar_1d",
+    "sigmoid_250hz",
+    "sigmoid_90hz",
+    "spherical_250hz",
+    "spherical_90hz",
+    "spherical_jitter"
+  ],
+  "комментарий": "Эталон текущего поведения методики, снятый на python-ветках (golden.reference_branches). От наличия numba не зависит: согласие ускоренных ветвей проверяют test_numba_parity.py и test_golden.py::test_numba_does_not_change_markup."
+}

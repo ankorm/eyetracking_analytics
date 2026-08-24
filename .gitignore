@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Виртуальные окружения
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Кеш инструментов
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.numba_cache/
+.coverage
+htmlcov/
+
+# Конфигурация IDE и локальных проверок типов
+# (pyrightconfig указывает на .venv родительского проекта — окружение разработчика)
+.idea/
+.vscode/
+pyrightconfig.json
+basedpyrightconfig.json
+
+# ОС
+.DS_Store
+
+
+# Артефакты сборки и установки
+*.egg-info/
+.eggs/
+dist/
+build/

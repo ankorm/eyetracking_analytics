@@ -1,0 +1,137 @@
+# Главное, что проверяет этот CI: наличие ускорителя не влияет на разметку.
+#
+# Ради этого свойства numba-ветки были переписаны (пункт N-1 аудита), и только
+# матрица {numba есть / нет} доказывает, что они не разошлись снова. Колонка без
+# numba — не «упрощённый прогон», а полноценная проверка методики: эталонные
+# фикстуры сняты именно на python-ветках.
+name: CI
+
+on:
+  push:
+    branches: [master, public]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: py${{ matrix.python }} · ${{ matrix.accel }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false      # колонки должны быть видны обе, даже если одна упала
+      matrix:
+        python: ["3.10", "3.11", "3.12"]
+        accel: [without-numba, with-numba]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Установка
+        run: |
+          python -m pip install --upgrade pip
+          if [ "${{ matrix.accel }}" = "with-numba" ]; then
+            pip install -e ".[dev,fast]"
+          else
+            pip install -e ".[dev]"
+          fi
+
+      - name: Проверка, что колонка матрицы настоящая
+        # Без этого шага провалившаяся установка numba превратила бы две колонки
+        # в одну и та же ошибка снова прошла бы незамеченной.
+        env:
+          EXPECTED: ${{ matrix.accel }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          from eyetracking_analytics import for_raw_data as frd
+          from eyetracking_analytics import gaze_mark as gm
+
+          expected = os.environ["EXPECTED"] == "with-numba"
+          actual = {"gaze_mark": gm.HAS_NUMBA, "for_raw_data": frd.HAS_NUMBA}
+          print(f"ожидается numba={expected}, фактически {actual}")
+          if any(v is not expected for v in actual.values()):
+              sys.exit(f"колонка матрицы недостоверна: {actual}, ожидалось {expected}")
+          try:
+              import numba
+              print("numba", numba.__version__)
+          except ImportError:
+              print("numba отсутствует — так и задумано в этой колонке")
+          PY
+
+      - name: Окружение эталона
+        run: |
+          python -c "
+          from tests import golden
+          for k, v in golden.environment().items(): print(f'  {k:20s} {v}')"
+
+      - name: Тесты
+        run: pytest -q --durations=5
+
+  package:
+    name: пакет и метаданные
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Сборка
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+
+      - name: Проверка метаданных и лицензии
+        run: |
+          python -m twine check dist/*
+          python - <<'PY'
+          import glob, zipfile, sys
+          wheel = glob.glob("dist/*.whl")[0]
+          names = zipfile.ZipFile(wheel).namelist()
+          licenses = [n for n in names if "/licenses/" in n]
+          print("лицензия в колесе:", licenses or "НЕТ")
+          if not licenses:
+              sys.exit("LICENSE не попал в дистрибутив")
+          modules = [n for n in names if n.startswith("eyetracking_analytics/") and n.endswith(".py")]
+          print(f"модулей в пакете: {len(modules)}")
+          if len(modules) < 9:
+              sys.exit(f"в колесе не все модули: {modules}")
+          PY
+
+      - name: Установка из колеса и публичный API
+        # Проверка, что пакет работает без исходного дерева: __all__ на месте,
+        # реализационные детали наружу не текут.
+        run: |
+          pip install dist/*.whl
+          cd /tmp && python - <<'PY'
+          import eyetracking_analytics as ea
+          print("версия", ea.__version__, "имён в __all__:", len(ea.__all__))
+          missing = [n for n in ea.__all__ if not hasattr(ea, n)]
+          assert not missing, f"объявлены в __all__, но отсутствуют: {missing}"
+          leaked = [n for n in ("np", "pd", "scipy", "plt", "sns", "Quaternion", "Vector3", "HAS_NUMBA")
+                    if hasattr(ea, n)]
+          assert not leaked, f"наружу утекли реализационные детали: {leaked}"
+          print("утечек нет")
+          PY
+
+  lint:
+    name: стиль
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Версия ограничена: ruff добавляет правила в минорных выпусках, и без
+      # ограничения обязательная задача краснела бы от чужого релиза.
+      - run: pip install "ruff>=0.16,<0.17"
+      - run: ruff check . --output-format=github

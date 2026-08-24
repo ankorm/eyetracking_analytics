@@ -1,0 +1,1 @@
+t_start_s,t_end_s,mean_speed_deg_s,mean_eccentricity_deg,has_trend,slope_gaze_x_deg_s,p_gaze_x,slope_gaze_y_deg_s,p_gaze_y,n_valid,mean_gaze_x,mean_gaze_y,cov_fro_norm_deg2,bcea_deg2,hull_area_deg2,spread_std_deg,spread_p95_deg,spread_peak_deg,heterogeneous_parent,split_score,split_pvalue,split_depth,duration_s,duration_valid,spread_deg,spread_limit_deg,spread_valid

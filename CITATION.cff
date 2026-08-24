@@ -1,0 +1,97 @@
+# Как ссылаться на библиотеку и на методику.
+#
+# Библиотека пока закрытая, и кнопку «Cite this repository» GitHub показывает
+# только у публичных репозиториев. Файл заведён заранее и вступит в силу, если
+# будет решение о публикации; просьба ссылаться на статью действует независимо
+# от статуса репозитория.
+#
+# ВНИМАНИЕ, до первого релиза остаётся заполнить одно поле:
+#   * DOI самой библиотеки — появится после первого релиза на Zenodo.
+# Выходные данные статей заполнены; пока нет DOI библиотеки, файл остаётся
+# валидным CFF, а ссылка на методику работает и без него.
+
+cff-version: 1.2.0
+message: >-
+  Если библиотека использовалась в исследовании, ссылайтесь на статью
+  с моделью главной последовательности (preferred-citation): именно её
+  результат заложен в расчёт порогов. Если использовалась модель траектории
+  саккады (модуль saccade_model), добавьте ссылки из раздела references.
+  Ссылка на сам код — дополнительно.
+type: software
+title: eyetracking_analytics
+abstract: >-
+  Библиотека разметки и анализа движений глаза и взора: выделение переводов
+  взора, фиксаций и интегральных характеристик записи. Пороги детектирования
+  выводятся из частоты дискретизации по модели главной последовательности
+  саккад, а не задаются константами.
+version: 0.2.0
+license: BSD-3-Clause
+repository-code: https://github.com/ankorm/eyetracking_analytics
+authors:
+  - family-names: Kruchinina
+    given-names: Anna
+    orcid: https://orcid.org/0000-0001-9720-8163
+keywords:
+  - eye tracking
+  - gaze
+  - saccade main sequence
+  - fixation detection
+  - oculography
+# doi: 10.5281/zenodo.XXXXXXX   # DOI релиза, выдаётся Zenodo
+
+# Статья, результат которой заложен в расчёт порогов: таблица 4 даёт параметры
+# (T0_ms, m, V0, n) в models.py.
+# Цитируется англоязычная версия. У статьи есть и русская, с отдельной DOI
+# 10.15593/rzhbiomeh/2026.1.10 и другой пагинацией (с. 126-133); смешивать их
+# в одной ссылке нельзя.
+preferred-citation:
+  type: article
+  title: >-
+    Analysis of saccadic main sequence relationship from a time-optimal
+    control perspective
+  year: 2026
+  authors:
+    - family-names: Kruchinina
+      given-names: Anna
+      orcid: https://orcid.org/0000-0001-9720-8163
+    - family-names: Xu
+      given-names: Xuemei
+  journal: Russian Journal of Biomechanics
+  volume: 30
+  issue: 1
+  start: 108
+  end: 114
+  doi: 10.15593/RJBiomech/2026.1.10
+
+# Модель траектории саккады как задачи оптимального быстродействия: звено
+# второго порядка с релейным управлением, моменты переключения из условия
+# попадания. Реализована в saccade_model.py.
+references:
+  - type: article
+    title: Parametrization of Saccade Trajectories
+    year: 2018
+    authors:
+      - family-names: Kruchinina
+        given-names: Anna
+        orcid: https://orcid.org/0000-0001-9720-8163
+      - family-names: Yakushev
+        given-names: A. G.
+    journal: Moscow University Mechanics Bulletin
+    volume: 73
+    issue: 4
+    start: 97
+    end: 100
+    doi: 10.3103/S0027133018340052
+  - type: article
+    title: Optimal time task in saccadic eye movement
+    year: 2020
+    authors:
+      - family-names: Kruchinina
+        given-names: Anna
+        orcid: https://orcid.org/0000-0001-9720-8163
+    journal: Russian Journal of Biomechanics
+    volume: 24
+    issue: 1
+    start: 33
+    end: 39
+    doi: 10.15593/RJBiomech/2020.1.04
