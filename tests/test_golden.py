@@ -52,16 +52,24 @@ def test_case_matches_golden(case: str) -> None:
         assert not problems, f"{case}/{name}:\n  " + "\n  ".join(problems)
 
 
-def _library_versions_match() -> bool:
+def _reference_environment_matches() -> bool:
+    """Совпадает ли окружение с тем, в котором снят эталон.
+
+    Версий библиотек мало: последние биты зависят и от машины. На arm64 и x86-64
+    одни и те же формулы дают разный результат в 1e-13, и бит-в-бит проверка
+    на чужой архитектуре падала бы, ничего не сообщая о самой методике.
+    """
     recorded = _meta()["окружение"]
     current = golden.environment()
-    return all(recorded.get(k) == current.get(k) for k in ("numpy", "pandas", "scipy"))
+    keys = ("numpy", "pandas", "scipy", "машина", "система")
+    return all(recorded.get(k) == current.get(k) for k in keys)
 
 
 @pytest.mark.skipif(
-    not _library_versions_match(),
-    reason="версии numpy/pandas/scipy отличаются от тех, в которых снят эталон: "
-           "бит-в-бит совпадение недостижимо, работает сравнение с допуском",
+    not _reference_environment_matches(),
+    reason="окружение отличается от того, в котором снят эталон (версии библиотек "
+           "или архитектура машины): бит-в-бит совпадение недостижимо, работает "
+           "сравнение с допуском",
 )
 @pytest.mark.parametrize("case", sorted(golden.CASES))
 def test_case_matches_golden_bit_exact(case: str) -> None:

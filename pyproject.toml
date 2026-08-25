@@ -52,6 +52,10 @@ filterwarnings = [
 line-length = 100
 target-version = "py310"
 src = ["src", "tests"]
+# docs/history -- сохранённая прежняя версия API: исторический документ,
+# править его нельзя, поэтому и линтовать незачем. В релиз каталог не идёт,
+# так что исключение действует только в рабочей ветке.
+extend-exclude = ["docs/history"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]

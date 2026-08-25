@@ -48,6 +48,14 @@ The synthetic data check the methodology where the right answer is known. A real
 
 The case `real_vr` is part of the reference as well: the direction, the eccentricity, the velocity, the gaze shifts and the fixations are pinned on the real recording.
 
+## Bit-exact only on the same machine
+
+The reference was recorded on a particular machine, and this is written into `data/meta.json` alongside the library versions: `машина` and `система`. The bit-exact check (`test_case_matches_golden_bit_exact`) runs only if both match.
+
+The reason is arithmetic: on arm64 and x86-64 trigonometry is computed by different kernels, and the same formulas diverge in the last bits. Without the machine check the bit-exact test would fail in CI on a discrepancy of 1.5e-13, telling nothing about the methodology itself.
+
+For the same reason the tolerance for continuous quantities is `1e-7` rather than `1e-9`. The most sensitive of them is the modulus of the velocity: it goes through `arccos` of the dot product of unit vectors, and `arccos` near one amplifies the loss of significant digits — between machines the discrepancy reaches 1.3e-08 relative at values of hundreds of deg/s. That is orders of magnitude below any methodologically meaningful effect: the minimum amplitude of an event at 250 Hz is 0.25 deg.
+
 ## The reference is recorded on the python branch
 
 The fixtures are generated and checked inside `golden.reference_branches()`, that is, always on the python branches — they are declared the reference of the methodology (item N-1).

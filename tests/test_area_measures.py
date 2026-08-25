@@ -32,7 +32,10 @@ def test_matches_the_original_biathlon_formula() -> None:
     cov = np.cov(x, y, ddof=1)
     original = 2 * np.log(10) * np.sqrt(cov[0, 0] * cov[1, 1] - cov[0, 1] ** 2) * np.pi
 
-    assert bcea_deg2(x, y) == pytest.approx(original, rel=0, abs=0)
+    # Не бит-в-бит: та же формула, записанная в другом порядке, на разных
+    # машинах даёт последние биты по-разному. Здесь проверяется тождество
+    # формул, а не воспроизводимость арифметики.
+    assert bcea_deg2(x, y) == pytest.approx(original, rel=1e-12)
 
 
 def test_scales_as_an_area() -> None:

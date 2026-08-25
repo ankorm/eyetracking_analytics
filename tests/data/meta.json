@@ -1,15 +1,31 @@
 {
-  "сгенерировано": "2026-08-25T10:33:10+00:00",
-  "git_head": "aacc87c",
+  "сгенерировано": "2026-08-25T13:54:37+00:00",
+  "git_head": "f422e0e",
   "окружение": {
     "numpy": "2.4.6",
     "pandas": "3.0.5",
     "scipy": "1.17.1",
+    "машина": "arm64",
+    "система": "Darwin",
     "эталонная_ветка": "python",
     "numba": "0.67.0"
   },
   "случаи": [
-    "real_vr"
+    "direction_angles_250hz",
+    "direction_angles_90hz",
+    "direction_plane",
+    "eye_layer",
+    "metrics",
+    "models",
+    "orientation",
+    "preprocess",
+    "real_vr",
+    "scalar_1d",
+    "sigmoid_250hz",
+    "sigmoid_90hz",
+    "spherical_250hz",
+    "spherical_90hz",
+    "spherical_jitter"
   ],
   "комментарий": "Эталон текущего поведения методики, снятый на python-ветках (golden.reference_branches). От наличия numba не зависит: согласие ускоренных ветвей проверяют test_numba_parity.py и test_golden.py::test_numba_does_not_change_markup."
 }
