@@ -6,10 +6,9 @@
 # collected in `references` and are added to the citation according to what
 # exactly was used.
 #
-# NOTE: one field remains to be filled in before the first release:
-#   * the DOI of the library itself — it is issued by Zenodo after the release.
-# The bibliographic data of the works are filled in; while the library DOI is
-# missing the file remains valid CFF, and the citation of the code works too.
+# NOTE: one field is still empty — the DOI of the library itself, which Zenodo
+# issues once a release is archived there. Until then the file remains valid CFF
+# and the citation of the code works through `repository-code`.
 
 cff-version: 1.2.0
 message: >-
@@ -29,7 +28,7 @@ abstract: >-
   gaze shifts, fixations and integral characteristics of a recording. The
   detection thresholds are derived from the sampling rate by the model of the
   saccadic main sequence rather than given as constants.
-version: 0.2.0
+version: 1.0.0
 license: BSD-3-Clause
 repository-code: https://github.com/ankorm/eyetracking_analytics
 authors:

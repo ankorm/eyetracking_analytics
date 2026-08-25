@@ -2,6 +2,8 @@
 
 > In Russian: [`docs/README-rus.md`](docs/README-rus.md)
 
+[![CI](https://github.com/ankorm/eyetracking_analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/ankorm/eyetracking_analytics/actions/workflows/ci.yml)
+
 A library for the event detection and analysis of **eye and gaze movements**: extraction of gaze shifts, fixations and integral characteristics of a recording, following the author's methodology. The computation of the thresholds builds on a model of the saccadic main sequence and takes the sampling rate into account.
 
 If you use the library in research, **cite the article** whose result is built into the threshold computation — see [How to cite](#how-to-cite).
@@ -249,7 +251,7 @@ This is research code whose results go into publications, so reproducibility is 
 
 ## Adding it to your own project
 
-The library is closed and is added to the author's projects as a package.
+The library is installed as an ordinary package.
 
 ```bash
 pip install -e .                 # the library
@@ -265,11 +267,11 @@ git submodule update --init eyetracking_analytics
 pip install -e ./eyetracking_analytics
 ```
 
-Or straight from the repository, without a submodule (SSH access required):
+Or straight from the repository, without a submodule:
 
 ```bash
-pip install "git+ssh://git@github.com/ankorm/eyetracking_analytics.git@public"
-pip install "git+ssh://git@github.com/ankorm/eyetracking_analytics.git@v0.2.0"  # pinned version
+pip install "git+https://github.com/ankorm/eyetracking_analytics.git"
+pip install "git+https://github.com/ankorm/eyetracking_analytics.git@v1.0.0"  # pinned version
 ```
 
 > **Important for older projects.** It used to be enough to put the submodule into the project directory: the modules lay in its root and were found through `sys.path`. Now the package lives in `src/`, so **having the submodule directory on the path is not enough** — `from eyetracking_analytics import eyetracking_funs` gives `ImportError: ... (unknown location)`. It suffices to run `pip install -e ./eyetracking_analytics` once; the imports in the notebooks themselves need no change, they keep working as before.
@@ -299,11 +301,11 @@ Required: `numpy`, `pandas`, `scipy`. Optional (extras): `fast` — `numba` (acc
 
 ## Status
 
-**The library is closed.** An open publication is postponed: it is currently being run in — the library is plugged into the author's projects and checked on real recordings. The decision to put it into open access is taken after that.
+**The library is open, version 1.0.0.** The API is used in the author's projects and has been checked on real recordings.
 
-A practical consequence: incompatible API changes are still permitted and need no agreement with anyone beyond the author's own projects. That is precisely why the methodological questions (the measure of spatial spread, the split and merge constants — they are worked through in the `docs_add` branch) are worth settling **before** publication: after it, a change of behaviour becomes a breaking change for someone else's code.
+From version 1.0.0 a compatibility promise applies: an incompatible change of the public API or of the numerical results is released only with a major version bump and an explicit note in `CHANGELOG.md`. Some methodological questions remain open — first of all the measure of spatial spread (which of the three to take as the main one, and what the threshold should be) and the origin of the split and merge constants; that is why the spread criterion by default only flags fixations rather than dropping them.
 
-What has already been done is in `CHANGELOG.md`. Almost everything is ready for publication: the licence is chosen, the bibliographic data of the works are filled in; what remains is the release DOI, which Zenodo issues once the repository is put out.
+All changes, marked with whether they alter numerical results, are in `CHANGELOG.md`. The release DOI is issued by Zenodo; until it appears the repository itself can be cited, see [How to cite](#how-to-cite).
 
 ## How to cite
 

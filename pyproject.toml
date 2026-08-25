@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "eyetracking-analytics"
-version = "0.2.0"
+version = "1.0.0"
 description = "Разметка и анализ движений глаза и взора: переводы взора, фиксации, метрики стабильности"
 readme = "README.md"
 requires-python = ">=3.10"
