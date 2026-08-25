@@ -25,6 +25,8 @@ The pytest settings live in `pyproject.toml`; no `sys.path` edits are needed: th
 | `generate_golden.py` | regeneration of the fixtures: `python -m tests.generate_golden [case ...]` |
 | `test_golden.py` | regression check of all cases + agreement of the accelerated branch on the pipeline |
 | `test_numba_parity.py` | item N-1: the numba branches must be exact copies of the python branches |
+| `test_real_recording.py` | the pipeline on a real anonymised recording: uneven step, gaps, outliers |
+| `real_data.py` | the loader of the real recording and a description of how it is anonymised |
 | `data/meta.json` | the environment, branch and commit under which the reference was recorded |
 
 Real participants' recordings never enter the repository: all recordings are generated from `synthetic.py`.
@@ -35,6 +37,16 @@ Real participants' recordings never enter the repository: all recordings are gen
 2. The checks fail → you decide whether this is a **deliberate** change of the methodology.
 3. If it is: you describe it in `CHANGELOG.md` with the note "changes numerical results", and only then regenerate the fixtures with `python -m tests.generate_golden <case>`.
 4. If it is not — this is a regression; you leave the fixtures alone.
+
+## A real recording alongside the synthetic ones
+
+The synthetic data check the methodology where the right answer is known. A real recording checks something else — that the code survives to the end on what a device actually produces: an uneven step (25 % jitter), gaps, velocity outliers above the physiological limit.
+
+`data/real_vr_head_eye_90hz.csv` is a 20 s excerpt from a recording in a VR headset with a built-in eye tracker (90 Hz) from the author's project. It contains the eight components of two quaternions: the orientation of the head in stationary space and the orientation of the eye relative to the head — exactly what gaze is made up of.
+
+**Anonymisation.** Only the time from zero and those eight numbers are kept. The date and time of the recording, the name of the participant, the names of the original file and directory, the session number, the eyelid openness, the positions in space and the remaining columns of the device are not kept. A person is not identifiable from a direction of gaze.
+
+The case `real_vr` is part of the reference as well: the direction, the eccentricity, the velocity, the gaze shifts and the fixations are pinned on the real recording.
 
 ## The reference is recorded on the python branch
 

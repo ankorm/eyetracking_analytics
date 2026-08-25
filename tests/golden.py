@@ -23,7 +23,7 @@ from eyetracking_analytics import models as mdl
 from eyetracking_analytics import orientation as ori
 from eyetracking_analytics import sampling as smp
 
-from . import synthetic
+from . import real_data, synthetic
 
 DATA_DIR = Path(__file__).parent / "data"
 
@@ -267,6 +267,32 @@ def _case_eye_layer() -> dict[str, pd.DataFrame]:
     }
 
 
+
+def _case_real_vr() -> dict[str, pd.DataFrame]:
+    """Реальная запись: кватернионы головы и глаза -> взор -> разметка.
+
+    Синтетика проверяет методику там, где известен правильный ответ; этот
+    случай фиксирует поведение на том, что выдаёт прибор, -- с неравномерным
+    шагом, пропусками и выбросами. Запись обезличена, см. `real_data`.
+    """
+    from eyetracking_analytics import direction as dr
+
+    data = real_data.vr_head_eye()
+    gaze = dr.gaze_direction(head=real_data.quaternions(data, "head"),
+                             eye=real_data.quaternions(data, "eye"))
+    res = mkp.mark_gaze_events_direction(
+        gaze.to_frame(data["T_s"]), col_time="T_s", geometry="vector",
+        col_horizontal="gaze_horizontal", col_vertical="gaze_vertical",
+        col_forward="gaze_forward")
+    return {
+        "direction": pd.DataFrame(gaze.direction, columns=["x", "y", "z"]),
+        "eccentricity": pd.DataFrame({"deg": res.eccentricity_deg}),
+        "speed": pd.DataFrame({"deg_s": res.speed_deg_s}),
+        "gaze_shifts": res.gaze_shifts,
+        "fixations": res.fixations,
+    }
+
+
 #: Полный набор эталонов: имя случая -> функция без аргументов.
 CASES: dict[str, Callable[[], dict[str, pd.DataFrame]]] = {
     "spherical_250hz": lambda: _case_spherical("gaze_2d_250hz"),
@@ -283,6 +309,7 @@ CASES: dict[str, Callable[[], dict[str, pd.DataFrame]]] = {
     "metrics": _case_metrics,
     "preprocess": _case_preprocess,
     "eye_layer": _case_eye_layer,
+    "real_vr": _case_real_vr,
 }
 
 

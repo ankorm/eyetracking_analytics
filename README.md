@@ -303,7 +303,7 @@ Required: `numpy`, `pandas`, `scipy`. Optional (extras): `fast` — `numba` (acc
 
 A practical consequence: incompatible API changes are still permitted and need no agreement with anyone beyond the author's own projects. That is precisely why the methodological questions (the measure of spatial spread, the split and merge constants — they are worked through in the `docs_add` branch) are worth settling **before** publication: after it, a change of behaviour becomes a breaking change for someone else's code.
 
-What has already been done is in `CHANGELOG.md`. What would be required if a decision to publish were taken is in the publication checklist: it is kept in the working branch and is not part of the release (the licence is chosen, the bibliographic data of the works are filled in, the release DOI remains).
+What has already been done is in `CHANGELOG.md`. Almost everything is ready for publication: the licence is chosen, the bibliographic data of the works are filled in; what remains is the release DOI, which Zenodo issues once the repository is put out.
 
 ## How to cite
 
