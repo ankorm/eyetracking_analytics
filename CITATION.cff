@@ -1,29 +1,34 @@
-# Как ссылаться на библиотеку и на методику.
+# How to cite the library and the methodology.
 #
-# Библиотека пока закрытая, и кнопку «Cite this repository» GitHub показывает
-# только у публичных репозиториев. Файл заведён заранее и вступит в силу, если
-# будет решение о публикации; просьба ссылаться на статью действует независимо
-# от статуса репозитория.
+# The primary citation is the repository itself. There is deliberately no
+# `preferred-citation` field here: without it citation tools take the program
+# itself rather than an article. The works the methodology rests on are
+# collected in `references` and are added to the citation according to what
+# exactly was used.
 #
-# ВНИМАНИЕ, до первого релиза остаётся заполнить одно поле:
-#   * DOI самой библиотеки — появится после первого релиза на Zenodo.
-# Выходные данные статей заполнены; пока нет DOI библиотеки, файл остаётся
-# валидным CFF, а ссылка на методику работает и без него.
+# NOTE: one field remains to be filled in before the first release:
+#   * the DOI of the library itself — it is issued by Zenodo after the release.
+# The bibliographic data of the works are filled in; while the library DOI is
+# missing the file remains valid CFF, and the citation of the code works too.
 
 cff-version: 1.2.0
 message: >-
-  Если библиотека использовалась в исследовании, ссылайтесь на статью
-  с моделью главной последовательности (preferred-citation): именно её
-  результат заложен в расчёт порогов. Если использовалась модель траектории
-  саккады (модуль saccade_model), добавьте ссылки из раздела references.
-  Ссылка на сам код — дополнительно.
+  Cite the library itself: the fields of this file are the primary citation.
+  In addition, according to what exactly was used in the work, add from the
+  references section: the model of the saccadic main sequence (Kruchinina,
+  Xu, 2026) — its result is built into the computation of every detection
+  threshold; the saccade trajectory model (Kruchinina, Yakushev, 2018 and
+  Kruchinina, 2020) — when the saccade_model module is used; the criterion of
+  the quality of visual tracking (Shtefanova, Yakushev, 2008) — when a value
+  of ksv is reported; the study of biathlon shooting (Kruchinina, Polikanova,
+  2025) — when the swept area bcea_deg2 is used.
 type: software
 title: eyetracking_analytics
 abstract: >-
-  Библиотека разметки и анализа движений глаза и взора: выделение переводов
-  взора, фиксаций и интегральных характеристик записи. Пороги детектирования
-  выводятся из частоты дискретизации по модели главной последовательности
-  саккад, а не задаются константами.
+  A library for the markup and analysis of eye and gaze movements: detection of
+  gaze shifts, fixations and integral characteristics of a recording. The
+  detection thresholds are derived from the sampling rate by the model of the
+  saccadic main sequence rather than given as constants.
 version: 0.2.0
 license: BSD-3-Clause
 repository-code: https://github.com/ankorm/eyetracking_analytics
@@ -37,36 +42,31 @@ keywords:
   - saccade main sequence
   - fixation detection
   - oculography
-# doi: 10.5281/zenodo.XXXXXXX   # DOI релиза, выдаётся Zenodo
+# doi: 10.5281/zenodo.XXXXXXX   # the release DOI, issued by Zenodo
 
-# Статья, результат которой заложен в расчёт порогов: таблица 4 даёт параметры
-# (T0_ms, m, V0, n) в models.py.
-# Цитируется англоязычная версия. У статьи есть и русская, с отдельной DOI
-# 10.15593/rzhbiomeh/2026.1.10 и другой пагинацией (с. 126-133); смешивать их
-# в одной ссылке нельзя.
-preferred-citation:
-  type: article
-  title: >-
-    Analysis of saccadic main sequence relationship from a time-optimal
-    control perspective
-  year: 2026
-  authors:
-    - family-names: Kruchinina
-      given-names: Anna
-      orcid: https://orcid.org/0000-0001-9720-8163
-    - family-names: Xu
-      given-names: Xuemei
-  journal: Russian Journal of Biomechanics
-  volume: 30
-  issue: 1
-  start: 108
-  end: 114
-  doi: 10.15593/RJBiomech/2026.1.10
-
-# Модель траектории саккады как задачи оптимального быстродействия: звено
-# второго порядка с релейным управлением, моменты переключения из условия
-# попадания. Реализована в saccade_model.py.
 references:
+  # The model of the main sequence: Table 4 supplies the parameters
+  # (T0_ms, m, V0, n) in models.py, from which all detection thresholds follow.
+  - type: article
+    title: >-
+      Analysis of saccadic main sequence relationship from a time-optimal
+      control perspective
+    year: 2026
+    authors:
+      - family-names: Kruchinina
+        given-names: Anna
+        orcid: https://orcid.org/0000-0001-9720-8163
+      - family-names: Xu
+        given-names: Xuemei
+    journal: Russian Journal of Biomechanics
+    volume: 30
+    issue: 1
+    start: 108
+    end: 114
+    doi: 10.15593/RJBiomech/2026.1.10
+  # The saccade trajectory model as a time-optimal control problem: a
+  # second-order element with relay control, the switching moments following
+  # from the condition of hitting the target. Implemented in saccade_model.py.
   - type: article
     title: Parametrization of Saccade Trajectories
     year: 2018
@@ -95,3 +95,39 @@ references:
     start: 33
     end: 39
     doi: 10.15593/RJBiomech/2020.1.04
+  # The criterion of the quality of visual tracking, on which the gaze
+  # stabilization coefficient rests (ksv in eyetracking_funs.py). Please cite
+  # it if a value of ksv is reported.
+  - type: article
+    title: A quality criterion for visual tracking during nystagmus
+    year: 2008
+    authors:
+      - family-names: Shtefanova
+        given-names: O. Yu.
+      - family-names: Yakushev
+        given-names: A. G.
+    journal: Moscow University Mechanics Bulletin
+    volume: 63
+    issue: 4
+    start: 100
+    end: 102
+    doi: 10.3103/S0027133008040043
+  # The work in which the measure of the swept area was applied (BCEA,
+  # bcea_deg2 in gaze_mark.py): there it measured the area of the aiming region.
+  - type: article
+    title: >-
+      Analysis of Eye and Head Tracking Movements during Shooting from the
+      Prone Position in Biathletes Compared to Novices
+    year: 2025
+    authors:
+      - family-names: Kruchinina
+        given-names: Anna
+        orcid: https://orcid.org/0000-0001-9720-8163
+      - family-names: Polikanova
+        given-names: I. S.
+    journal: Psychology. Journal of the Higher School of Economics
+    volume: 22
+    issue: 3
+    start: 473
+    end: 488
+    doi: 10.17323/1813-8918-2025-3-473-488

@@ -4,6 +4,8 @@
 ############
 from __future__ import annotations
 
+import functools
+import inspect
 import logging as _logging
 import warnings
 from collections.abc import Callable, Sequence
@@ -19,7 +21,28 @@ from scipy.signal import find_peaks
 from scipy.spatial import ConvexHull, QhullError
 from scipy.special import betainc, expit
 
-from .models import N_SAMPLES_SACCADE, min_saccade_minima_by_sampling
+from .constants import (
+    DEFAULT_BCEA_PROBABILITY,
+    DEFAULT_MAX_AXIS_DT_S,
+    DEFAULT_MIN_EVENT_DURATION_S,
+    DEFAULT_SIGMOID_P_HI,
+    DEFAULT_SIGMOID_P_LO,
+    DEFAULT_SIGMOID_R2_MIN,
+    DEFAULT_SIGMOID_WINDOW_S,
+    DEFAULT_TREND_ALPHA,
+    LEGACY_GAUSSIAN_SIGMA_POINTS,
+    LEGACY_MIN_PEAK_WIDTH_POINTS,
+    LEGACY_SIGMOID_MIN_AMPLITUDE_DEG,
+    LEGACY_SIGMOID_MIN_PEAK_VELOCITY_DEG_S,
+    MERGE_STAT_TOLERANCE,
+    N_SAMPLES_SACCADE,
+    SPLIT_ALPHA,
+    SPLIT_COV_WEIGHT,
+    SPLIT_MIN_POINTS,
+    SPLIT_SCORE_MIN_ALONE,
+    SPLIT_SCORE_MIN_WITH_PVALUE,
+)
+from .models import min_saccade_minima_by_sampling
 from .report import (
     COMPUTED,
     FROM_DATA,
@@ -59,6 +82,73 @@ except ImportError:
 
         return decorator
 
+_REST_LIMIT_RENAMED = (
+    "параметр fixation_velocity_limit_deg_s при анализе данных движения глаза "
+    "переименован "
+    "в rest_velocity_limit_deg_s. Фиксация -- состояние взора относительно "
+    "неподвижного пространства, а здесь углы заданы относительно головы: порог "
+    "отделяет покой глаза, а не фиксацию. В разметке взора "
+    "(mark_gaze_events_1d, mark_gaze_events_direction) имя осталось прежним -- "
+    "там термин верен. Значение и поведение параметра не изменились."
+)
+
+
+#: Прежние имена параметров -> нынешние. Буквы осей `x`/`y` означали разное
+#: в разных параметризациях: yaw и pitch в угловой, координаты плоскости
+#: в планарной, компоненты вектора в векторной. Роль -- горизонталь, вертикаль,
+#: направление вперёд -- одна и та же во всех трёх.
+AXIS_RENAMES: dict[str, str] = {
+    "col_gaze_x": "col_horizontal",
+    "col_gaze_y": "col_vertical",
+    "col_gaze_z": "col_forward",
+    "gaze_x_neutral": "horizontal_neutral",
+    "gaze_y_neutral": "vertical_neutral",
+}
+
+_AXIS_RENAMED = (
+    "буквы осей убраны из имён: {old} -> {new}. Прежние `x` и `y` означали "
+    "разное в разных параметризациях (yaw и pitch в угловой, координаты "
+    "плоскости в планарной, компоненты вектора в векторной), а роль -- "
+    "горизонталь и вертикаль -- одна и та же. Значения и поведение "
+    "не изменились. Выходные колонки переименованы так же: mean_gaze_x -> "
+    "mean_horizontal_deg, slope_gaze_x_deg_s -> slope_horizontal_deg_s, "
+    "p_gaze_x -> p_horizontal и симметрично для второй оси."
+)
+
+
+def _renamed_message(name: str) -> str | None:
+    """Текст объяснения для прежнего имени параметра; для прочих имён -- None."""
+    if name == "fixation_velocity_limit_deg_s":
+        return _REST_LIMIT_RENAMED
+    if name in AXIS_RENAMES:
+        return _AXIS_RENAMED.format(old=name, new=AXIS_RENAMES[name])
+    return None
+
+
+def guard_renamed(fn):
+    """Прежнее имя параметра объясняет замену, а не даёт невнятный `TypeError`.
+
+    Имя проверяется до связывания аргументов: иначе обязательный параметр
+    под новым именем перекрыл бы объяснение сообщением «missing argument».
+    Имена, которые у самой функции valid, не трогаются -- так
+    `fixation_velocity_limit_deg_s` остаётся рабочим в разметке взора,
+    где термин верен, и объясняется только при анализе движения глаза.
+    """
+    valid = set(inspect.signature(fn).parameters)
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        for name in kwargs:
+            if name in valid:
+                continue
+            message = _renamed_message(name)
+            if message is not None:
+                raise NotImplementedError(message)
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
 #: Канонические имена осей внутри расчёта. Наружу они переименовываются в имена
 #: пользовательских колонок (см. `axis_column_map` и `rename_axis_columns`),
 #: но вся механика внутри работает только с ними — иначе схема результата
@@ -66,53 +156,29 @@ except ImportError:
 #:
 #: Имена предметные, а не порядковые: по колонке `gaze_x_L` сразу видно, что это
 #: амплитуда сигмоиды по первой координате взора, а не «что-то по оси номер один».
-AXIS_IDS: tuple[str, str] = ("gaze_x", "gaze_y")
+AXIS_IDS: tuple[str, str] = ("horizontal", "vertical")
 
 #: Колонки результата разметки, которые НЕ привязаны к осям и всегда называются одинаково.
-#: Константы критерия разбиения интервала на подпроцессы и критерия склейки.
-#: Пункт C-9 аудита: их происхождение не задокументировано, обоснование ожидается
-#: от автора методики. До тех пор они выведены в параметры функций разбиения
-#: и склейки, чтобы их можно было менять и чтобы было видно, где они применяются.
-#:
-#: SPLIT_SCORE_MIN_WITH_PVALUE — минимальная мера различия при значимом p-value;
-#: SPLIT_SCORE_MIN_ALONE      — мера различия, достаточная сама по себе;
-#: SPLIT_COV_WEIGHT           — вес ковариационного члена в мере различия;
-#: SPLIT_ALPHA                — уровень значимости для четырёх статистических тестов;
-#: SPLIT_MIN_POINTS           — минимум валидных точек в каждой половине;
-#: MERGE_STAT_TOLERANCE       — допустимое относительное отличие статистик при склейке.
-SPLIT_SCORE_MIN_WITH_PVALUE: float = 1.0
-SPLIT_SCORE_MIN_ALONE: float = 2.5
-SPLIT_COV_WEIGHT: float = 0.5
-SPLIT_ALPHA: float = 0.01
-SPLIT_MIN_POINTS: int = 5
-MERGE_STAT_TOLERANCE: float = 0.2
-
-#: Прежние значения окон в ОТСЧЁТАХ. Используются, когда пользователь не задал
-#: окно в секундах: так дефолтное поведение остаётся тем же, что до перехода
-#: на секунды, без пересчёта через частоту (пункт M-3 аудита).
-LEGACY_MIN_PEAK_WIDTH_POINTS: int = 3
-LEGACY_GAUSSIAN_SIGMA_POINTS: float = 1.5
-
 SHARED_EVENT_COLUMNS: tuple[str, ...] = (
     "t_event_s", "event_type", "t_start_s", "t_end_s", "duration_s", "amplitude_deg",
 )
 
 
-def axis_column_map(col_gaze_x: str, col_gaze_y: str) -> dict[str, str]:
+def axis_column_map(col_horizontal: str, col_vertical: str) -> dict[str, str]:
     """Отображение «каноническая ось -> имя колонки пользователя».
 
     Публичная функция: по ней можно построить ожидаемую схему результата,
     не запуская разметку.
 
     >>> axis_column_map("gaze_yaw", "gaze_pitch")
-    {'gaze_x': 'gaze_yaw', 'gaze_y': 'gaze_pitch'}
+    {'horizontal': 'gaze_yaw', 'vertical': 'gaze_pitch'}
     """
-    if str(col_gaze_x) == str(col_gaze_y):
+    if str(col_horizontal) == str(col_vertical):
         raise ValueError(
-            f"col_gaze_x и col_gaze_y должны различаться, получено обе '{col_gaze_x}': "
+            f"col_horizontal и col_vertical должны различаться, получено обе '{col_horizontal}': "
             "иначе колонки результата обеих осей совпадут и перезапишут друг друга"
         )
-    return {AXIS_IDS[0]: str(col_gaze_x), AXIS_IDS[1]: str(col_gaze_y)}
+    return {AXIS_IDS[0]: str(col_horizontal), AXIS_IDS[1]: str(col_vertical)}
 
 
 def rename_axis_columns(
@@ -123,7 +189,7 @@ def rename_axis_columns(
 ) -> pd.DataFrame:
     """Переименовывает пер-осевые колонки между канонической и пользовательской схемой.
 
-    `to="source"`   : `gaze_x_L` -> `<col_gaze_x>_L`, `has_gaze_x` -> `has_<col_gaze_x>`;
+    `to="source"`   : `gaze_x_L` -> `<col_horizontal>_L`, `has_gaze_x` -> `has_<col_horizontal>`;
     `to="canonical"`: обратное преобразование.
 
     Общие колонки (`SHARED_EVENT_COLUMNS`) не затрагиваются никогда.
@@ -206,13 +272,14 @@ def _show_sigmoid_peak_debug_plot(
         y: np.ndarray,
         dg_x: np.ndarray,
         dg_y: np.ndarray,
-        gaze_x_fits: pd.DataFrame,
-        gaze_y_fits: pd.DataFrame,
+        horizontal_fits: pd.DataFrame,
+        vertical_fits: pd.DataFrame,
         events: pd.DataFrame,
 ) -> None:
     """Показывает отладочный график координат `[deg]`, времени `[s]` и скоростей `[deg/s]`.
 
-    Используется только в sigmoid-ветке при `debug_plot_peaks=True`.
+    Используется только при разметке на базе аппроксимации движения сигмоидой,
+    при `debug_plot_peaks=True`.
     """
     if not HAS_PLOTLY or go is None or make_subplots is None:
         _LOG.warning("отладочный график пропущен: plotly не установлен")
@@ -251,8 +318,8 @@ def _show_sigmoid_peak_debug_plot(
     )
 
     for fits, coord_name, color in (
-        (gaze_x_fits, "x peaks", "#17becf"),
-        (gaze_y_fits, "y peaks", "#e377c2"),
+        (horizontal_fits, "x peaks", "#17becf"),
+        (vertical_fits, "y peaks", "#e377c2"),
     ):
         if fits.empty or "i_peak" not in fits.columns:
             continue
@@ -549,7 +616,7 @@ def _interval_stats_by_indices(
         i_start: int,
         i_end: int,
         *,
-        trend_alpha: float = 0.05,
+        trend_alpha: float = DEFAULT_TREND_ALPHA,
         trend_slope_min: float = 0.0,
 ):
     """
@@ -821,11 +888,6 @@ def _relative_change_within(value_a: float, value_b: float, tol: float = 0.2) ->
 SPREAD_MEASURES: tuple[str, ...] = ("std", "p95", "peak")
 
 
-#: Уровень покрытия эллипса рассеяния по умолчанию. 0.90 отвечает k = ln(10)
-#: в исходной формуле проекта по биатлону, откуда мера перенесена.
-DEFAULT_BCEA_PROBABILITY: float = 0.90
-
-
 def _bcea_from_cov(cov: np.ndarray, probability: float) -> float:
     """Площадь эллипса рассеяния по готовой матрице ковариации, град^2."""
     if cov is None or not np.isfinite(cov).all():
@@ -841,8 +903,8 @@ def _bcea_from_cov(cov: np.ndarray, probability: float) -> float:
 
 
 def bcea_deg2(
-        gaze_x: np.ndarray,
-        gaze_y: np.ndarray,
+        horizontal: np.ndarray,
+        vertical: np.ndarray,
         *,
         probability: float = DEFAULT_BCEA_PROBABILITY,
 ) -> float:
@@ -862,19 +924,23 @@ def bcea_deg2(
     по двум точкам площадь не определена. Вырожденное облако (точки на прямой)
     даёт 0.
 
-    Перенесено из проекта по биатлону, где так считалась площадь области
-    прицеливания; формула та же с точностью до перевода единиц -- там
-    сантиметры на плоскости, здесь градусы на сфере.
+    Мера перенесена из работы Kruchinina A. P., Polikanova I. S. Analysis of Eye
+    and Head Tracking Movements during Shooting from the Prone Position in
+    Biathletes Compared to Novices // Psychology. Journal of the Higher School
+    of Economics. 2025. Vol. 22, no. 3. P. 473-488.
+    DOI: https://doi.org/10.17323/1813-8918-2025-3-473-488
+    Там так считалась площадь области прицеливания; формула та же с точностью
+    до перевода единиц -- там сантиметры на плоскости, здесь градусы на сфере.
     """
-    xa = np.asarray(gaze_x, dtype=float)
-    ya = np.asarray(gaze_y, dtype=float)
+    xa = np.asarray(horizontal, dtype=float)
+    ya = np.asarray(vertical, dtype=float)
     m = np.isfinite(xa) & np.isfinite(ya)
     if int(m.sum()) < 3:
         return float("nan")
     return _bcea_from_cov(np.cov(xa[m], ya[m], ddof=1), probability)
 
 
-def convex_hull_area_deg2(gaze_x: np.ndarray, gaze_y: np.ndarray) -> float:
+def convex_hull_area_deg2(horizontal: np.ndarray, vertical: np.ndarray) -> float:
     """Площадь выпуклой оболочки облака точек взора, град^2.
 
     Вторая мера площади, рядом с `bcea_deg2`, и смысл у них разный:
@@ -893,8 +959,8 @@ def convex_hull_area_deg2(gaze_x: np.ndarray, gaze_y: np.ndarray) -> float:
     Меньше трёх валидных точек -- `NaN`. Вырожденное облако (все точки
     на одной прямой) даёт 0: у отрезка площади нет.
     """
-    xa = np.asarray(gaze_x, dtype=float)
-    ya = np.asarray(gaze_y, dtype=float)
+    xa = np.asarray(horizontal, dtype=float)
+    ya = np.asarray(vertical, dtype=float)
     m = np.isfinite(xa) & np.isfinite(ya)
     if int(m.sum()) < 3:
         return float("nan")
@@ -967,13 +1033,13 @@ def _make_fixation_record(
         "mean_speed_deg_s": mean_speed,
         "mean_eccentricity_deg": mean_alpha,
         "has_trend": bool(has_trend),
-        "slope_gaze_x_deg_s": float(slope_x) if np.isfinite(slope_x) else np.nan,
-        "p_gaze_x": float(p_x) if np.isfinite(p_x) else np.nan,
-        "slope_gaze_y_deg_s": float(slope_y) if np.isfinite(slope_y) else np.nan,
-        "p_gaze_y": float(p_y) if np.isfinite(p_y) else np.nan,
+        "slope_horizontal_deg_s": float(slope_x) if np.isfinite(slope_x) else np.nan,
+        "p_horizontal": float(p_x) if np.isfinite(p_x) else np.nan,
+        "slope_vertical_deg_s": float(slope_y) if np.isfinite(slope_y) else np.nan,
+        "p_vertical": float(p_y) if np.isfinite(p_y) else np.nan,
         "n_valid": int(n_valid),
-        "mean_gaze_x": float(ex) if np.isfinite(ex) else np.nan,
-        "mean_gaze_y": float(ey) if np.isfinite(ey) else np.nan,
+        "mean_horizontal_deg": float(ex) if np.isfinite(ex) else np.nan,
+        "mean_vertical_deg": float(ey) if np.isfinite(ey) else np.nan,
         "cov_fro_norm_deg2": fro_cov,
         "spread_std_deg": spread_std,
         "spread_p95_deg": spread_p95,
@@ -986,8 +1052,8 @@ def _make_fixation_record(
     if with_area:
         # Площади заметаемой области -- характеристики ВЗОРА: они имеют смысл
         # как проекция на неподвижное пространство. Для движения глаза
-        # относительно черепа такой проекции нет, поэтому в глазной ветке
-        # колонок нет вовсе, а не NaN.
+        # относительно головы такой проекции нет, поэтому при анализе данных
+        # движения глаза колонок нет вовсе, а не NaN.
         record["bcea_deg2"] = _bcea_from_cov(cov, DEFAULT_BCEA_PROBABILITY)
         record["hull_area_deg2"] = convex_hull_area_deg2(
             x[i_start:i_end + 1], y[i_start:i_end + 1])
@@ -1004,7 +1070,7 @@ def _can_merge_fixation_records(
         y: np.ndarray,
         alpha_deg: np.ndarray,
         v_ang: np.ndarray,
-        fixation_velocity_limit_deg_s: float,
+        velocity_limit_deg_s: float,
         min_amplitude_deg: float,
         max_merge_gap_s: float,
         trend_alpha: float,
@@ -1061,10 +1127,10 @@ def _can_merge_fixation_records(
         with_area=with_area,
     )
 
-    if np.isfinite(merged["mean_speed_deg_s"]) and merged["mean_speed_deg_s"] >= float(fixation_velocity_limit_deg_s):
+    if np.isfinite(merged["mean_speed_deg_s"]) and merged["mean_speed_deg_s"] >= float(velocity_limit_deg_s):
         return False, None
 
-    keys_to_compare = ["mean_speed_deg_s", "mean_gaze_x", "mean_gaze_y", "cov_fro_norm_deg2"]
+    keys_to_compare = ["mean_speed_deg_s", "mean_horizontal_deg", "mean_vertical_deg", "cov_fro_norm_deg2"]
     for key in keys_to_compare:
         if not _relative_change_within(merged[key], left[key], tol=stat_tol):
             return False, None
@@ -1083,7 +1149,7 @@ def _merge_adjacent_fixation_records(
         y: np.ndarray,
         alpha_deg: np.ndarray,
         v_ang: np.ndarray,
-        fixation_velocity_limit_deg_s: float,
+        velocity_limit_deg_s: float,
         min_amplitude_deg: float,
         max_merge_gap_s: float,
         trend_alpha: float,
@@ -1107,7 +1173,7 @@ def _merge_adjacent_fixation_records(
             y=y,
             alpha_deg=alpha_deg,
             v_ang=v_ang,
-            fixation_velocity_limit_deg_s=fixation_velocity_limit_deg_s,
+            velocity_limit_deg_s=velocity_limit_deg_s,
             min_amplitude_deg=min_amplitude_deg,
             max_merge_gap_s=max_merge_gap_s,
             trend_alpha=trend_alpha,
@@ -1131,7 +1197,7 @@ def _trim_candidates_by_velocity(
         *,
         t: np.ndarray,
         v_ang: np.ndarray,
-        fixation_velocity_limit_deg_s: float,
+        velocity_limit_deg_s: float,
         max_merge_gap_s: float,
 ) -> list[tuple[int, int]]:
     """Оставляет в интервале только отсчёты со скоростью ниже порога фиксации.
@@ -1153,7 +1219,7 @@ def _trim_candidates_by_velocity(
 
     Размерности: `t` `[s]`, `v_ang` `[deg/s]`, порог `[deg/s]`, разрыв `[s]`.
     """
-    limit = float(fixation_velocity_limit_deg_s)
+    limit = float(velocity_limit_deg_s)
     gap = float(max_merge_gap_s)
     out: list[tuple[int, int]] = []
     for i0, i1 in candidates:
@@ -1186,12 +1252,12 @@ def _build_fixations_between_saccades(
         alpha_deg: np.ndarray,
         v_ang: np.ndarray,
         events: pd.DataFrame,
-        fixation_velocity_limit_deg_s: float,
+        velocity_limit_deg_s: float,
         min_amplitude_deg: float,
         min_interval_duration_s: float,
         min_subprocess_duration_s: float,
         max_merge_gap_s: float,
-        trend_alpha: float = 0.05,
+        trend_alpha: float = DEFAULT_TREND_ALPHA,
         trend_slope_min: float = 0.1,
         trim_by_velocity: bool = False,
         v_criterion: np.ndarray | None = None,
@@ -1206,7 +1272,7 @@ def _build_fixations_between_saccades(
     if len(t) < 2:
         return pd.DataFrame(columns=[
             't_start_s', 't_end_s', 'mean_speed_deg_s', 'mean_eccentricity_deg', 'has_trend',
-            'slope_gaze_x_deg_s', 'p_gaze_x', 'slope_gaze_y_deg_s', 'p_gaze_y', 'n_valid', 'mean_gaze_x', 'mean_gaze_y', 'cov_fro_norm_deg2',
+            'slope_horizontal_deg_s', 'p_horizontal', 'slope_vertical_deg_s', 'p_vertical', 'n_valid', 'mean_horizontal_deg', 'mean_vertical_deg', 'cov_fro_norm_deg2',
             *(['bcea_deg2', 'hull_area_deg2'] if with_area else []),
             'heterogeneous_parent', 'split_score', 'split_pvalue', 'split_depth'
         ])
@@ -1245,7 +1311,7 @@ def _build_fixations_between_saccades(
             candidates,
             t=t,
             v_ang=v_ang if v_criterion is None else v_criterion,
-            fixation_velocity_limit_deg_s=fixation_velocity_limit_deg_s,
+            velocity_limit_deg_s=velocity_limit_deg_s,
             max_merge_gap_s=max_merge_gap_s,
         )
 
@@ -1305,7 +1371,7 @@ def _build_fixations_between_saccades(
         y=y,
         alpha_deg=alpha_deg,
         v_ang=v_ang,
-        fixation_velocity_limit_deg_s=fixation_velocity_limit_deg_s,
+        velocity_limit_deg_s=velocity_limit_deg_s,
         min_amplitude_deg=min_amplitude_deg,
         max_merge_gap_s=max_merge_gap_s,
         trend_alpha=trend_alpha,
@@ -1317,7 +1383,7 @@ def _build_fixations_between_saccades(
     if len(fixation_records) == 0:
         return pd.DataFrame(columns=[
             't_start_s', 't_end_s', 'mean_speed_deg_s', 'mean_eccentricity_deg', 'has_trend',
-            'slope_gaze_x_deg_s', 'p_gaze_x', 'slope_gaze_y_deg_s', 'p_gaze_y', 'n_valid', 'mean_gaze_x', 'mean_gaze_y', 'cov_fro_norm_deg2',
+            'slope_horizontal_deg_s', 'p_horizontal', 'slope_vertical_deg_s', 'p_vertical', 'n_valid', 'mean_horizontal_deg', 'mean_vertical_deg', 'cov_fro_norm_deg2',
             *(['bcea_deg2', 'hull_area_deg2'] if with_area else []),
             'heterogeneous_parent', 'split_score', 'split_pvalue', 'split_depth'
         ])
@@ -1327,7 +1393,7 @@ def _build_fixations_between_saccades(
         out = out.drop(columns=["_i_start", "_i_end"])
     cols = [
         't_start_s', 't_end_s', 'mean_speed_deg_s', 'mean_eccentricity_deg', 'has_trend',
-        'slope_gaze_x_deg_s', 'p_gaze_x', 'slope_gaze_y_deg_s', 'p_gaze_y', 'n_valid', 'mean_gaze_x', 'mean_gaze_y', 'cov_fro_norm_deg2',
+        'slope_horizontal_deg_s', 'p_horizontal', 'slope_vertical_deg_s', 'p_vertical', 'n_valid', 'mean_horizontal_deg', 'mean_vertical_deg', 'cov_fro_norm_deg2',
         *(['bcea_deg2', 'hull_area_deg2'] if with_area else []),
         'spread_std_deg', 'spread_p95_deg', 'spread_peak_deg',
         'heterogeneous_parent', 'split_score', 'split_pvalue', 'split_depth'
@@ -1342,7 +1408,7 @@ def _build_saccades(
         alpha_deg: np.ndarray,
         v_ang: np.ndarray,
         min_peak_velocity_deg_s: float,
-        fixation_velocity_limit_deg_s: float,
+        velocity_limit_deg_s: float,
         min_peak_width: float,
         min_amplitude_deg: float,
         amplitude_fn: Callable[[int, int], float],
@@ -1355,13 +1421,16 @@ def _build_saccades(
     широк по времени и даёт суммарную амплитуду не меньше `min_amplitude_deg`. Границы
     события уточняются по падению скорости ниже порога фиксации.
 
-    Терминология: для глаза относительно черепа такое событие — **саккада**,
+    Терминология: для глаза относительно головы такое событие — **саккада**,
     для взора относительно пространства — **перевод взора**. Функция
     предметно-нейтральна и используется в обоих случаях.
     """
     # Прежде колонки A_s/alpha_s и A_f/alpha_f содержали одно и то же значение
     # (пункт I-1 аудита). Дубликаты убраны, имена несут единицы.
-    base_columns = ['t_start_s', 't_end_s', 'peak_speed_deg_s',
+    # Длительность события возвращается отдельной колонкой, а не оставляется
+    # разностью границ: по ней строится статистика событий, и считать её заново
+    # в каждом анализе — лишний повод разойтись в определении.
+    base_columns = ['t_start_s', 't_end_s', 'duration_s', 'peak_speed_deg_s',
                     'eccentricity_start_deg', 'eccentricity_end_deg']
     columns = base_columns + (['amplitude_deg', 'i_start', 'i_end'] if with_amplitude else [])
 
@@ -1375,7 +1444,7 @@ def _build_saccades(
 
     for idx in peak_ind:
         left, right = _nearest_peak_bounds_by_threshold(
-            v_ang, int(idx), float(fixation_velocity_limit_deg_s)
+            v_ang, int(idx), float(velocity_limit_deg_s)
         )
         if right < left:
             continue
@@ -1390,7 +1459,7 @@ def _build_saccades(
         if amplitude < float(min_amplitude_deg):
             continue
 
-        row = [t_start, t_finish, max_vel, val_start, val_finish]
+        row = [t_start, t_finish, t_finish - t_start, max_vel, val_start, val_finish]
         if with_amplitude:
             # Дедупликация: два пика внутри одного движения дают одинаковые границы
             # (пункт B-3 аудита). В прежней схеме такие строки дублировались.
@@ -1539,8 +1608,8 @@ def peaks_to_sigmoid_fits(
         dg: np.ndarray,
         peak_records: list[dict[str, Any]],
         coord_name: str,
-        dt_window_s: float = 0.15,
-        r2_min_keep: float = 0.96,
+        dt_window_s: float = DEFAULT_SIGMOID_WINDOW_S,
+        r2_min_keep: float = DEFAULT_SIGMOID_R2_MIN,
         verbose: bool | int = False,
 ) -> pd.DataFrame:
     """
@@ -1651,14 +1720,14 @@ def sigmoid_time_at_fraction_vec(t0: Any, k: Any, p: float) -> np.ndarray:
 
 # вспомогательная для: _mark_eye_data_with_sigmoid_planar_impl
 def merge_fits(
-        gaze_x_fits: pd.DataFrame,
-        gaze_y_fits: pd.DataFrame,
+        horizontal_fits: pd.DataFrame,
+        vertical_fits: pd.DataFrame,
         *,
-        axis_x_id: str = AXIS_IDS[0],
-        axis_y_id: str = AXIS_IDS[1],
-        max_axis_dt_s: float = 0.05,
-        p_lo: float = 0.03,
-        p_hi: float = 0.97,
+        axis_h_id: str = AXIS_IDS[0],
+        axis_v_id: str = AXIS_IDS[1],
+        max_axis_dt_s: float = DEFAULT_MAX_AXIS_DT_S,
+        p_lo: float = DEFAULT_SIGMOID_P_LO,
+        p_hi: float = DEFAULT_SIGMOID_P_HI,
 ) -> pd.DataFrame:
     """
     Сливает fits по времени.
@@ -1666,14 +1735,14 @@ def merge_fits(
     Используется в `_mark_eye_data_with_sigmoid_planar_impl`.
     Размерности: времена `t_*` `[s]`, амплитуды `delta*` `[deg]`,
     скорости пиков `amp_peak_abs_dg` `[deg/s]`, `max_axis_dt_s` `[s]`.
-    `axis_x_id`, `axis_y_id` — КАНОНИЧЕСКИЕ идентификаторы осей (`gaze_x`, `gaze_y`),
+    `axis_h_id`, `axis_v_id` — КАНОНИЧЕСКИЕ идентификаторы осей (`horizontal`, `vertical`),
     которыми префиксуются пер-осевые колонки результата. Имена колонок
     пользователя сюда не попадают: переименование делается на границе API.
     `p_lo`, `p_hi` — доли сигмоиды для обрезки границ (0..1): левая и правая.
     """
 
-    p = _sort_frame(gaze_x_fits.copy(), "t_peak")
-    q = _sort_frame(gaze_y_fits.copy(), "t_peak")
+    p = _sort_frame(horizontal_fits.copy(), "t_peak")
+    q = _sort_frame(vertical_fits.copy(), "t_peak")
 
     def rename(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
         cols = [c for c in df.columns if c != "coord"]
@@ -1682,16 +1751,16 @@ def merge_fits(
         out_df: pd.DataFrame = pd.DataFrame(out)
         return out_df
 
-    p2 = rename(p, axis_x_id)
-    q2 = rename(q, axis_y_id)
-    has_x_col = f"has_{axis_x_id}"
-    has_y_col = f"has_{axis_y_id}"
+    p2 = rename(p, axis_h_id)
+    q2 = rename(q, axis_v_id)
+    has_x_col = f"has_{axis_h_id}"
+    has_y_col = f"has_{axis_v_id}"
     empty_cols = [has_x_col, has_y_col, "t_event_s", "event_type", "t_start_s", "t_end_s", "duration_s"]
     if p2.empty and q2.empty:
         return pd.DataFrame(columns=empty_cols)
 
-    t_peak_x = f"{axis_x_id}_t_peak"
-    t_peak_y = f"{axis_y_id}_t_peak"
+    t_peak_x = f"{axis_h_id}_t_peak"
+    t_peak_y = f"{axis_v_id}_t_peak"
     if t_peak_x in p2.columns:
         p2[t_peak_x] = pd.to_numeric(p2[t_peak_x], errors="coerce")
     if t_peak_y in q2.columns:
@@ -1717,7 +1786,7 @@ def merge_fits(
     for _, p_row in p2.iterrows():
         p_series = cast(pd.Series, p_row)
         p_record = cast(dict[str, Any], p_series.to_dict())
-        p0, p1 = _row_interval(p_series, axis_x_id)
+        p0, p1 = _row_interval(p_series, axis_h_id)
         p_peak = _float_or_nan(p_series.get(t_peak_x))
 
         best_idx: int | None = None
@@ -1728,7 +1797,7 @@ def merge_fits(
             if idx in matched_y_idx:
                 continue
             y_series = pd.Series(y_record)
-            y0, y1 = _row_interval(y_series, axis_y_id)
+            y0, y1 = _row_interval(y_series, axis_v_id)
             y_peak = _float_or_nan(y_series.get(t_peak_y))
             overlap = _interval_overlap(p0, p1, y0, y1)
             dt_peak = abs(float(p_peak - y_peak)) if np.isfinite(p_peak) and np.isfinite(y_peak) else np.inf
@@ -1784,11 +1853,11 @@ def merge_fits(
             merged[has_x_col] & ~merged[has_y_col],
             ~merged[has_x_col] & merged[has_y_col],
         ],
-        [f"{axis_x_id}+{axis_y_id}", f"{axis_x_id}_only", f"{axis_y_id}_only"],
+        [f"{axis_h_id}+{axis_v_id}", f"{axis_h_id}_only", f"{axis_v_id}_only"],
         default="unknown",
     )
 
-    for coord in [axis_x_id, axis_y_id]:
+    for coord in [axis_h_id, axis_v_id]:
         col_t0 = f"{coord}_t0"
         col_k = f"{coord}_k"
 
@@ -1812,10 +1881,10 @@ def merge_fits(
             return _float_array(merged[name])
         return np.full(len(merged), np.nan)
 
-    p_start = get_col(f"{axis_x_id}_t_start")
-    q_start = get_col(f"{axis_y_id}_t_start")
-    p_end = get_col(f"{axis_x_id}_t_end")
-    q_end = get_col(f"{axis_y_id}_t_end")
+    p_start = get_col(f"{axis_h_id}_t_start")
+    q_start = get_col(f"{axis_v_id}_t_start")
+    p_end = get_col(f"{axis_h_id}_t_end")
+    q_end = get_col(f"{axis_v_id}_t_end")
 
     def combine_start_vec(hp: np.ndarray, hy: np.ndarray, vp: np.ndarray, vy: np.ndarray) -> np.ndarray:
         out = np.full_like(vp, np.nan)
@@ -2065,28 +2134,29 @@ def ols_slope_pvalue(t: np.ndarray, y: np.ndarray) -> tuple[float, float, int]:
 
 
 # вспомогательная для: _build_slow_movements_between_events, analyze_stable_intervals
+@guard_renamed
 def interval_stats_by_time(
         data: pd.DataFrame,
         t_start_s: float,
         t_end_s: float,
         *,
-        col_gaze_x: str,
-        col_gaze_y: str,
+        col_horizontal: str,
+        col_vertical: str,
         col_time: str = "T_s",
-        trend_alpha: float = 0.05,
+        trend_alpha: float = DEFAULT_TREND_ALPHA,
         trend_slope_min: float = 0.0,
 ):
     """Считает статистики сигнала на интервале времени `[t_start_s, t_end_s]`.
 
-    Размерности: `t_start_s/t_end_s` `[s]`, `col_gaze_x/col_gaze_y` `[deg]`,
+    Размерности: `t_start_s/t_end_s` `[s]`, `col_horizontal/col_vertical` `[deg]`,
     наклоны `[deg/s]`. Границы включаются с двух сторон, поэтому соседние
     интервалы, стыкующиеся по времени, разделяют общий отсчёт.
     """
     mask = (data[col_time] >= t_start_s) & (data[col_time] <= t_end_s)
 
     t = _float_array(data.loc[mask, col_time])
-    x = _float_array(data.loc[mask, col_gaze_x])
-    y = _float_array(data.loc[mask, col_gaze_y])
+    x = _float_array(data.loc[mask, col_horizontal])
+    y = _float_array(data.loc[mask, col_vertical])
 
     m = np.isfinite(t) & np.isfinite(x) & np.isfinite(y)
     n_valid = int(m.sum())
@@ -2113,16 +2183,17 @@ def interval_stats_by_time(
 
 
 # вспомогательная для: analyze_stable_intervals
+@guard_renamed
 def stable_intervals_by_velocity(
         data: pd.DataFrame,
         *,
-        col_gaze_x: str,
-        col_gaze_y: str,
+        col_horizontal: str,
+        col_vertical: str,
         col_time: str = "T_s",
         velocity_limit_deg_s: float,
         min_points: int = 3,
         deg: bool = True,
-        trend_alpha: float = 0.05,
+        trend_alpha: float = DEFAULT_TREND_ALPHA,
         trend_slope_min: float = 0.0,
 ) -> pd.DataFrame:
     """Устойчивые интервалы: серии отсчётов со скоростью ниже порога.
@@ -2140,7 +2211,7 @@ def stable_intervals_by_velocity(
     скорость тем сильнее, чем дальше от нейтрали, -- вдвое уже при
     `pitch = 60` град.
 
-    Размерности: `col_gaze_x/col_gaze_y` `[deg]` при `deg=True`, иначе `[rad]`;
+    Размерности: `col_horizontal/col_vertical` `[deg]` при `deg=True`, иначе `[rad]`;
     `col_time` `[s]`, `velocity_limit_deg_s` `[deg/s]`, наклоны `[deg/s]`.
 
     Параметры:
@@ -2153,18 +2224,18 @@ def stable_intervals_by_velocity(
     """
     columns = [
         "t_start_s", "t_end_s", "duration_s", "n_points",
-        "mean_gaze_x", "mean_gaze_y", "mean_speed_deg_s",
-        "slope_gaze_x_deg_s", "p_gaze_x", "slope_gaze_y_deg_s", "p_gaze_y", "has_trend",
+        "mean_horizontal_deg", "mean_vertical_deg", "mean_speed_deg_s",
+        "slope_horizontal_deg_s", "p_horizontal", "slope_vertical_deg_s", "p_vertical", "has_trend",
     ]
-    for column in (col_time, col_gaze_x, col_gaze_y):
+    for column in (col_time, col_horizontal, col_vertical):
         if column not in data.columns:
             raise KeyError(f"в таблице нет столбца {column!r}")
 
-    work = data[[col_time, col_gaze_x, col_gaze_y]].apply(pd.to_numeric, errors="coerce").dropna()
+    work = data[[col_time, col_horizontal, col_vertical]].apply(pd.to_numeric, errors="coerce").dropna()
     work = _sort_frame(work, col_time)
     t = _float_array(work[col_time])
-    x = _float_array(work[col_gaze_x])
-    y = _float_array(work[col_gaze_y])
+    x = _float_array(work[col_horizontal])
+    y = _float_array(work[col_vertical])
     if t.size < max(2, int(min_points)):
         return pd.DataFrame(columns=columns)
 
@@ -2197,13 +2268,13 @@ def stable_intervals_by_velocity(
                 "t_end_s": float(t[i1]),
                 "duration_s": float(t[i1] - t[i0]),
                 "n_points": int(i1 - i0 + 1),
-                "mean_gaze_x": ex,
-                "mean_gaze_y": ey,
+                "mean_horizontal_deg": ex,
+                "mean_vertical_deg": ey,
                 "mean_speed_deg_s": float(np.nanmean(speed[i0:i1])) if i1 > i0 else np.nan,
-                "slope_gaze_x_deg_s": slope_x,
-                "p_gaze_x": p_x,
-                "slope_gaze_y_deg_s": slope_y,
-                "p_gaze_y": p_y,
+                "slope_horizontal_deg_s": slope_x,
+                "p_horizontal": p_x,
+                "slope_vertical_deg_s": slope_y,
+                "p_vertical": p_y,
                 "has_trend": bool(has_trend),
             })
         start = None
@@ -2328,7 +2399,7 @@ def _build_slow_movements_between_events(
         y: np.ndarray,
         events: pd.DataFrame,
         min_gap_s: float = 0.0,
-        trend_alpha: float = 0.05,
+        trend_alpha: float = DEFAULT_TREND_ALPHA,
         trend_slope_min: float = 0.0,
         col_time: str = "T_s",
 ) -> pd.DataFrame:
@@ -2347,7 +2418,7 @@ def _build_slow_movements_between_events(
     """
     cols = [
         "t_start_s", "t_end_s", "mean_speed_deg_s", "mean_eccentricity_deg", "has_trend",
-        "slope_gaze_x_deg_s", "p_gaze_x", "slope_gaze_y_deg_s", "p_gaze_y", "n_valid", "mean_gaze_x", "mean_gaze_y", "cov_fro_norm_deg2",
+        "slope_horizontal_deg_s", "p_horizontal", "slope_vertical_deg_s", "p_vertical", "n_valid", "mean_horizontal_deg", "mean_vertical_deg", "cov_fro_norm_deg2",
         "spread_std_deg", "spread_p95_deg", "spread_peak_deg",
         "i_start", "i_end", "i_event_left", "i_event_right",
         "t_stable_start", "t_stable_end", "dt_stable",
@@ -2402,8 +2473,8 @@ def _build_slow_movements_between_events(
             data,
             t0,
             tf,
-            col_gaze_x="_x",
-            col_gaze_y="_y",
+            col_horizontal="_x",
+            col_vertical="_y",
             col_time=col_time,
             trend_alpha=trend_alpha,
             trend_slope_min=trend_slope_min,
@@ -2421,13 +2492,13 @@ def _build_slow_movements_between_events(
             "mean_speed_deg_s": mean_speed,
             "mean_eccentricity_deg": np.nan,
             "has_trend": bool(has_trend),
-            "slope_gaze_x_deg_s": sx,
-            "p_gaze_x": px,
-            "slope_gaze_y_deg_s": sy,
-            "p_gaze_y": py,
+            "slope_horizontal_deg_s": sx,
+            "p_horizontal": px,
+            "slope_vertical_deg_s": sy,
+            "p_vertical": py,
             "n_valid": n_valid,
-            "mean_gaze_x": ex,
-            "mean_gaze_y": ey,
+            "mean_horizontal_deg": ex,
+            "mean_vertical_deg": ey,
             "cov_fro_norm_deg2": fro_cov,
             "spread_std_deg": spread_std,
             "spread_p95_deg": spread_p95,
@@ -2450,23 +2521,23 @@ def _build_slow_movements_between_events(
 # вспомогательная для: mark_eye_data_with_sigmoid
 def _mark_eye_data_with_sigmoid_planar_impl(
         data: pd.DataFrame,
-        col_gaze_x: str,
-        col_gaze_y: str,
+        col_horizontal: str,
+        col_vertical: str,
         col_time: str = "T_s",
-        min_peak_velocity_deg_s: float = 15,
-        max_axis_dt_s: float = 0.006,
+        min_peak_velocity_deg_s: float = LEGACY_SIGMOID_MIN_PEAK_VELOCITY_DEG_S,
+        max_axis_dt_s: float = DEFAULT_MAX_AXIS_DT_S,
         min_peak_width_s: float | None = None,
-        min_amplitude_deg: float = 1.0,
-        dt_window_s: float = 0.15,
+        min_amplitude_deg: float = LEGACY_SIGMOID_MIN_AMPLITUDE_DEG,
+        dt_window_s: float = DEFAULT_SIGMOID_WINDOW_S,
         peak_prominence: float = 0.0,
-        r2_min_keep: float = 0.96,
+        r2_min_keep: float = DEFAULT_SIGMOID_R2_MIN,
         min_fixation_gap_s: float = 0.0,
-        fixation_alpha: float = 0.05,
+        fixation_alpha: float = DEFAULT_TREND_ALPHA,
         fixation_slope_min: float = 0.0,
         median_window_s: float | None = None,
         gaussian_sigma_s: float | None = None,
-        sigmoid_p_lo: float = 0.03,
-        sigmoid_p_hi: float = 0.97,
+        sigmoid_p_lo: float = DEFAULT_SIGMOID_P_LO,
+        sigmoid_p_hi: float = DEFAULT_SIGMOID_P_HI,
         debug_plot_peaks: bool = False,
         verbose: bool | int = False,
         columns: str = "source",
@@ -2491,14 +2562,14 @@ def _mark_eye_data_with_sigmoid_planar_impl(
             f"columns должно быть 'source' или 'canonical', получено {columns!r}"
         )
     # Проверяет заодно, что имена осей различаются.
-    axis_map = axis_column_map(col_gaze_x, col_gaze_y)
+    axis_map = axis_column_map(col_horizontal, col_vertical)
 
     total_started = perf_counter()
     _progress_print(verbose, f"[sigmoid] start: {len(data)} samples")
 
     stage_started = perf_counter()
-    x = data[col_gaze_x].to_numpy(dtype=float)  # [deg]
-    y = data[col_gaze_y].to_numpy(dtype=float)  # [deg]
+    x = data[col_horizontal].to_numpy(dtype=float)  # [deg]
+    y = data[col_vertical].to_numpy(dtype=float)  # [deg]
     t = data[col_time].to_numpy(dtype=float)  # [s]
     finite_mask = np.isfinite(t) & np.isfinite(x) & np.isfinite(y)
     dropped = int(len(t) - int(finite_mask.sum()))  # [points]
@@ -2633,7 +2704,7 @@ def _mark_eye_data_with_sigmoid_planar_impl(
         min_amplitude_deg=min_amplitude_deg,
     )
 
-    gaze_x_fits = peaks_to_sigmoid_fits(
+    horizontal_fits = peaks_to_sigmoid_fits(
         t=t,
         y=x,
         dg=dg_x,
@@ -2643,10 +2714,10 @@ def _mark_eye_data_with_sigmoid_planar_impl(
         r2_min_keep=r2_min_keep,
         verbose=verbose,
     )
-    _progress_print(verbose, f"[sigmoid] x fits: {len(gaze_x_fits)} in {perf_counter() - stage_started:.2f}s")
+    _progress_print(verbose, f"[sigmoid] x fits: {len(horizontal_fits)} in {perf_counter() - stage_started:.2f}s")
 
     stage_started = perf_counter()
-    gaze_y_fits = peaks_to_sigmoid_fits(
+    vertical_fits = peaks_to_sigmoid_fits(
         t=t,
         y=y,
         dg=dg_y,
@@ -2656,14 +2727,14 @@ def _mark_eye_data_with_sigmoid_planar_impl(
         r2_min_keep=r2_min_keep,
         verbose=verbose,
     )
-    _progress_print(verbose, f"[sigmoid] y fits: {len(gaze_y_fits)} in {perf_counter() - stage_started:.2f}s")
+    _progress_print(verbose, f"[sigmoid] y fits: {len(vertical_fits)} in {perf_counter() - stage_started:.2f}s")
 
     stage_started = perf_counter()
     events = merge_fits(
-        gaze_x_fits, gaze_y_fits,
+        horizontal_fits, vertical_fits,
         max_axis_dt_s=max_axis_dt_s,
-        axis_x_id=AXIS_IDS[0],
-        axis_y_id=AXIS_IDS[1],
+        axis_h_id=AXIS_IDS[0],
+        axis_v_id=AXIS_IDS[1],
         p_lo=sigmoid_p_lo,
         p_hi=sigmoid_p_hi,
     )
@@ -2712,8 +2783,8 @@ def _mark_eye_data_with_sigmoid_planar_impl(
             y=y,
             dg_x=dg_x,
             dg_y=dg_y,
-            gaze_x_fits=gaze_x_fits,
-            gaze_y_fits=gaze_y_fits,
+            horizontal_fits=horizontal_fits,
+            vertical_fits=vertical_fits,
             events=events,
         )
 
@@ -2759,7 +2830,7 @@ def _mark_eye_data_with_sigmoid_planar_impl(
                 f"{len(events)} переводов взора, "
                 f"{len(slow_movements)} интервалов медленного движения",
                 source=COMPUTED),
-            "подгонок по осям": Param(f"{len(gaze_x_fits)} и {len(gaze_y_fits)} прошли отбор по r²",
+            "подгонок по осям": Param(f"{len(horizontal_fits)} и {len(vertical_fits)} прошли отбор по r²",
                                       source=COMPUTED,
                                       note=f"пиков 2D-скорости: {len(peaks)}"),
         },
@@ -2778,25 +2849,26 @@ def _mark_eye_data_with_sigmoid_planar_impl(
 
 
 # для внешнего вызова
+@guard_renamed
 def mark_eye_data_with_sigmoid(
         data: pd.DataFrame,
-        col_gaze_x: str,
-        col_gaze_y: str,
+        col_horizontal: str,
+        col_vertical: str,
         col_time: str = "T_s",
-        min_peak_velocity_deg_s: float = 15,
-        max_axis_dt_s: float = 0.006,
+        min_peak_velocity_deg_s: float = LEGACY_SIGMOID_MIN_PEAK_VELOCITY_DEG_S,
+        max_axis_dt_s: float = DEFAULT_MAX_AXIS_DT_S,
         min_peak_width_s: float | None = None,
-        min_amplitude_deg: float = 1.0,
-        dt_window_s: float = 0.15,
+        min_amplitude_deg: float = LEGACY_SIGMOID_MIN_AMPLITUDE_DEG,
+        dt_window_s: float = DEFAULT_SIGMOID_WINDOW_S,
         peak_prominence: float = 0.0,
-        r2_min_keep: float = 0.96,
+        r2_min_keep: float = DEFAULT_SIGMOID_R2_MIN,
         min_fixation_gap_s: float = 0.0,
-        fixation_alpha: float = 0.05,
+        fixation_alpha: float = DEFAULT_TREND_ALPHA,
         fixation_slope_min: float = 0.0,
         median_window_s: float | None = None,
         gaussian_sigma_s: float | None = None,
-        sigmoid_p_lo: float = 0.03,
-        sigmoid_p_hi: float = 0.97,
+        sigmoid_p_lo: float = DEFAULT_SIGMOID_P_LO,
+        sigmoid_p_hi: float = DEFAULT_SIGMOID_P_HI,
         debug_plot_peaks: bool = False,
         verbose: bool | int = False,
         columns: str = "source",
@@ -2826,25 +2898,25 @@ def mark_eye_data_with_sigmoid(
     `events` и таблицу интервалов медленного движения `slow_movements`.
 
     Схема таблицы событий. Внутри расчёта оси называются канонически
-    (`gaze_x`, `gaze_y`), поэтому механика не зависит от имён пользовательских
+    (`horizontal`, `vertical`), поэтому механика не зависит от имён пользовательских
     колонок. Наружу:
 
     * `columns="source"` (по умолчанию) — пер-осевые колонки получают имена
-      пользовательских столбцов: `<col_gaze_x>_L`, `<col_gaze_x>_k`, `has_<col_gaze_x>` и т.д.;
+      пользовательских столбцов: `<col_horizontal>_L`, `<col_horizontal>_k`, `has_<col_horizontal>` и т.д.;
     * `columns="canonical"` — сохраняются канонические имена `gaze_x_L`, `has_gaze_x`:
       схема одинакова для любых входных данных.
 
     Общие колонки (`t_event`, `event_type`, `t_start`, `t_end`, `t_finish`,
     `duration`, `A_deg`) не зависят от режима. Значения `event_type` —
-    **всегда канонические** (`gaze_x+gaze_y`, `gaze_x_only`, `gaze_y_only`), потому что
+    **всегда канонические** (`horizontal+vertical`, `gaze_x_only`, `gaze_y_only`), потому что
     это код, а не подпись: иначе фильтрация по нему была бы непереносимой.
     Отображение осей доступно как `events.attrs["axis_columns"]`
-    и через `axis_column_map(col_gaze_x, col_gaze_y)`.
+    и через `axis_column_map(col_horizontal, col_vertical)`.
     """
     return _mark_eye_data_with_sigmoid_planar_impl(
         data=data,
-        col_gaze_x=col_gaze_x,
-        col_gaze_y=col_gaze_y,
+        col_horizontal=col_horizontal,
+        col_vertical=col_vertical,
         col_time=col_time,
         min_peak_velocity_deg_s=min_peak_velocity_deg_s,
         max_axis_dt_s=max_axis_dt_s,
@@ -2873,7 +2945,8 @@ _PLANAR_WITHDRAWN = (
     "вблизи нейтральной точки давало скачок угла на 180° и ложное событие.\n"
     "Замена:\n"
     "  • взор на плоскости  -> markup.mark_gaze_events_direction(..., geometry='plane', r=...)\n"
-    "    где r — расстояние от центра вращения до плоскости (радиус глаза либо дистанция "
+    "    где r — расстояние от центра вращения до плоскости в тех же метрических "
+    "    единицах, что координаты (радиус глаза либо дистанция "
     "наблюдения);\n"
     "  • одна угловая координата -> markup.mark_gaze_events_1d(...).\n"
     "Сигналы другой природы (например стабилограмма) в область применимости "
@@ -2889,14 +2962,15 @@ def mark_eye_data_with_full_angle(*args: Any, **kwargs: Any):
 
 
 # для внешнего вызова
+@guard_renamed
 def mark_eye_data_with_full_angle_from_angles(
         data: pd.DataFrame,
-        col_gaze_x: str,
-        col_gaze_y: str,
+        col_horizontal: str,
+        col_vertical: str,
         col_time: str = 'T_s',
         min_peak_velocity_deg_s: float | None = None,
-        fixation_velocity_limit_deg_s: float | None = None,
-        min_event_duration_s: float = 0.006,
+        rest_velocity_limit_deg_s: float | None = None,
+        min_event_duration_s: float = DEFAULT_MIN_EVENT_DURATION_S,
         min_amplitude_deg: float | None = None,
         n_samples: int = N_SAMPLES_SACCADE,
         deg: bool = True,
@@ -2920,9 +2994,9 @@ def mark_eye_data_with_full_angle_from_angles(
     между саккадами.
     """
     return _mark_eye_data_from_angles_impl(
-        data, col_gaze_x, col_gaze_y, col_time,
+        data, col_horizontal, col_vertical, col_time,
         min_peak_velocity_deg_s=min_peak_velocity_deg_s,
-        fixation_velocity_limit_deg_s=fixation_velocity_limit_deg_s,
+        rest_velocity_limit_deg_s=rest_velocity_limit_deg_s,
         min_event_duration_s=min_event_duration_s,
         min_amplitude_deg=min_amplitude_deg,
         n_samples=n_samples,
@@ -2948,14 +3022,15 @@ def mark_eye_fixations_from_angles(*args: Any, **kwargs: Any):
     raise NotImplementedError(_EYE_FIXATIONS_RENAMED)
 
 
+@guard_renamed
 def mark_eye_rest_from_angles(
         data: pd.DataFrame,
-        col_gaze_x: str,
-        col_gaze_y: str,
+        col_horizontal: str,
+        col_vertical: str,
         col_time: str = 'T_s',
         min_peak_velocity_deg_s: float | None = None,
-        fixation_velocity_limit_deg_s: float | None = None,
-        min_event_duration_s: float = 0.006,
+        rest_velocity_limit_deg_s: float | None = None,
+        min_event_duration_s: float = DEFAULT_MIN_EVENT_DURATION_S,
         min_amplitude_deg: float | None = None,
         n_samples: int = N_SAMPLES_SACCADE,
         deg: bool = True,
@@ -2967,11 +3042,11 @@ def mark_eye_rest_from_angles(
     Не фиксации. Фиксация -- состояние **взора**: взор удерживается
     на объекте неподвижного пространства, и при этом голова и глаз вполне могут
     двигаться, компенсируя друг друга. Здесь же углы заданы относительно головы,
-    то есть речь о движении глаза, и неподвижность глаза относительно черепа
+    то есть речь о движении глаза, и неподвижность глаза относительно головы
     фиксацией не является. Поэтому интервал называется покоем.
 
     Отличие от `mark_eye_data_with_full_angle_from_angles` одно: интервал
-    урезается до отсчётов со скоростью ниже `fixation_velocity_limit_deg_s`,
+    урезается до отсчётов со скоростью ниже `rest_velocity_limit_deg_s`,
     то есть выполняется проверка скорости. Разрыв короче `max_merge_gap_s`
     нарушением не считается -- одиночный выброс не делит интервал покоя надвое.
 
@@ -2981,9 +3056,9 @@ def mark_eye_rest_from_angles(
     Возвращает `alpha` в градусах, таблицу саккад и таблицу интервалов покоя.
     """
     return _mark_eye_data_from_angles_impl(
-        data, col_gaze_x, col_gaze_y, col_time,
+        data, col_horizontal, col_vertical, col_time,
         min_peak_velocity_deg_s=min_peak_velocity_deg_s,
-        fixation_velocity_limit_deg_s=fixation_velocity_limit_deg_s,
+        rest_velocity_limit_deg_s=rest_velocity_limit_deg_s,
         min_event_duration_s=min_event_duration_s,
         min_amplitude_deg=min_amplitude_deg,
         n_samples=n_samples,
@@ -2996,13 +3071,13 @@ def mark_eye_rest_from_angles(
 
 def _mark_eye_data_from_angles_impl(
         data: pd.DataFrame,
-        col_gaze_x: str,
-        col_gaze_y: str,
+        col_horizontal: str,
+        col_vertical: str,
         col_time: str = 'T_s',
         *,
         min_peak_velocity_deg_s: float | None = None,
-        fixation_velocity_limit_deg_s: float | None = None,
-        min_event_duration_s: float = 0.006,
+        rest_velocity_limit_deg_s: float | None = None,
+        min_event_duration_s: float = DEFAULT_MIN_EVENT_DURATION_S,
         min_amplitude_deg: float | None = None,
         n_samples: int = N_SAMPLES_SACCADE,
         deg: bool = True,
@@ -3017,12 +3092,12 @@ def _mark_eye_data_from_angles_impl(
     `trim_by_velocity=True` -- фиксации.
 
     Размерности: `yaw/pitch` `[deg]` при `deg=True`, иначе `[rad]`;
-    `col_time` `[s]`, `min_peak_velocity_deg_s/fixation_velocity_limit_deg_s` `[deg/s]`,
+    `col_time` `[s]`, `min_peak_velocity_deg_s/rest_velocity_limit_deg_s` `[deg/s]`,
     `min_event_duration_s` `[s]`, `min_amplitude_deg` `[deg]`.
     """
 
-    yaw = data[col_gaze_x].to_numpy(dtype=float)
-    pitch = data[col_gaze_y].to_numpy(dtype=float)
+    yaw = data[col_horizontal].to_numpy(dtype=float)
+    pitch = data[col_vertical].to_numpy(dtype=float)
     t = data[col_time].to_numpy(dtype=float)
 
     # Единственная оценка частоты в проекте; заодно отвергает ось времени в миллисекундах.
@@ -3032,15 +3107,15 @@ def _mark_eye_data_from_angles_impl(
     # Пороги выводятся из частоты записи -- как в разметке взора. Прежде здесь
     # стояли константы 15 и 5 град/с и 1 град: значения вырожденной ветки старой
     # eye_params, не зависевшие от частоты. Событие здесь -- саккада, движение
-    # глаза относительно черепа, поэтому модель берётся при N_SAMPLES_SACCADE.
+    # глаза относительно головы, поэтому модель берётся при N_SAMPLES_SACCADE.
     minima = min_saccade_minima_by_sampling(sampling.fs_hz, n_samples=n_samples)
     peak_source = FROM_USER if min_peak_velocity_deg_s is not None else FROM_MODEL
-    fix_source = FROM_USER if fixation_velocity_limit_deg_s is not None else FROM_MODEL
+    fix_source = FROM_USER if rest_velocity_limit_deg_s is not None else FROM_MODEL
     amp_source = FROM_USER if min_amplitude_deg is not None else FROM_MODEL
     if min_peak_velocity_deg_s is None:
         min_peak_velocity_deg_s = float(minima.v_peak_deg_s)
-    if fixation_velocity_limit_deg_s is None:
-        fixation_velocity_limit_deg_s = float(minima.v_fixation_deg_s)
+    if rest_velocity_limit_deg_s is None:
+        rest_velocity_limit_deg_s = float(minima.v_fixation_deg_s)
     if min_amplitude_deg is None:
         min_amplitude_deg = float(minima.a_min_deg)
 
@@ -3089,7 +3164,7 @@ def _mark_eye_data_from_angles_impl(
         alpha_deg=alpha,
         v_ang=v_ang,
         min_peak_velocity_deg_s=min_peak_velocity_deg_s,
-        fixation_velocity_limit_deg_s=fixation_velocity_limit_deg_s,
+        velocity_limit_deg_s=rest_velocity_limit_deg_s,
         min_peak_width=max(
             1.0,
             float(np.ceil(min_event_duration_s / max(sampling.dt_median_s, 1e-12)))
@@ -3105,12 +3180,12 @@ def _mark_eye_data_from_angles_impl(
         alpha_deg=alpha,
         v_ang=v_ang,
         events=events,
-        fixation_velocity_limit_deg_s=fixation_velocity_limit_deg_s,
+        velocity_limit_deg_s=rest_velocity_limit_deg_s,
         min_amplitude_deg=min_amplitude_deg,
         min_interval_duration_s=float(min_event_duration_s),
         min_subprocess_duration_s=sub_dur,
         max_merge_gap_s=merge_gap,
-        trend_slope_min=fixation_velocity_limit_deg_s,
+        trend_slope_min=rest_velocity_limit_deg_s,
         trim_by_velocity=trim_by_velocity,
     )
     kind = "интервалов покоя" if trim_by_velocity else "интервалов между саккадами"
@@ -3128,7 +3203,7 @@ def _mark_eye_data_from_angles_impl(
                 f"модель при {sampling.fs_hz:.4g} Гц, n_samples={n_samples}"
                 if peak_source == FROM_MODEL else None),
             "порог скорости покоя": Param(
-                float(fixation_velocity_limit_deg_s), "град/с", fix_source,
+                float(rest_velocity_limit_deg_s), "град/с", fix_source,
                 "интервал урезан по порогу" if trim_by_velocity
                 else "интервал взят целиком: это интервалы между саккадами, не покой"),
             "минимальная амплитуда": Param(float(min_amplitude_deg), "град", amp_source),

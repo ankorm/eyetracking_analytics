@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from eyetracking_analytics import constants as const
 from eyetracking_analytics import gaze_mark as gm
 from eyetracking_analytics import markup as mk
 from eyetracking_analytics import models as mdl
@@ -16,13 +17,13 @@ from . import synthetic
 
 _FS = 250.0
 _SIGMOID_KW = dict(
-    col_gaze_x="gaze_yaw", col_gaze_y="gaze_pitch", col_time="T_s",
+    col_horizontal="gaze_yaw", col_vertical="gaze_pitch", col_time="T_s",
     min_peak_velocity_deg_s=30.0, min_amplitude_deg=0.5, max_axis_dt_s=0.012, dt_window_s=0.05,
     r2_min_keep=0.5,
 )
 # Плоские координаты точки взора: расстояние до плоскости r в тех же единицах.
 _PLANE_KW = dict(
-    col_gaze_x="X", col_gaze_y="Y", col_time="T_s", geometry="plane", r=300.0,
+    col_horizontal="X", col_vertical="Y", col_time="T_s", geometry="plane", r=300.0,
     min_peak_velocity_deg_s=20.0, fixation_velocity_limit_deg_s=15.0, min_event_duration_s=0.006,
     min_amplitude_deg=0.2,
 )
@@ -70,8 +71,8 @@ def test_none_windows_equal_legacy_point_values() -> None:
     _, s_none, f_none = gm.mark_eye_data_with_sigmoid(df, **_SIGMOID_KW)
     _, s_sec, f_sec = gm.mark_eye_data_with_sigmoid(
         df,
-        min_peak_width_s=gm.LEGACY_MIN_PEAK_WIDTH_POINTS / _FS,
-        gaussian_sigma_s=gm.LEGACY_GAUSSIAN_SIGMA_POINTS / _FS,
+        min_peak_width_s=const.LEGACY_MIN_PEAK_WIDTH_POINTS / _FS,
+        gaussian_sigma_s=const.LEGACY_GAUSSIAN_SIGMA_POINTS / _FS,
         **_SIGMOID_KW,
     )
     assert len(s_none) == len(s_sec)

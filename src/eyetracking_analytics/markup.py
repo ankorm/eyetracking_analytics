@@ -3,7 +3,7 @@
 ###################################################
 """Публичная разметка переводов взора и фиксаций.
 
-Термин «саккада» относится к движению глаза относительно черепа и в этом
+Термин «саккада» относится к движению глаза относительно головы и в этом
 модуле не используется: здесь размечается взор, то есть ориентация
 относительно окружающего пространства, и событие называется **переводом взора**.
 
@@ -56,16 +56,20 @@ import numpy as np
 import pandas as pd
 
 from . import gaze_mark as gm
+from .constants import (
+    DEFAULT_FIXATION_VELOCITY_WINDOW_S,
+    DEFAULT_MIN_EVENT_DURATION_S,
+    DEFAULT_TREND_ALPHA,
+    IDEAL_FIXATION_SPREAD_DEG,
+    MIN_FIXATION_DURATION_S,
+    N_SAMPLES_GAZE_SHIFT,
+)
 from .gaze_mark import (
     _build_fixations_between_saccades,
     _build_saccades,
+    guard_renamed,
 )
-from .models import (
-    DEFAULT_MIN_FIXATION_DURATION_S,
-    IDEAL_FIXATION_SPREAD_DEG,
-    N_SAMPLES_GAZE_SHIFT,
-    min_saccade_minima_by_sampling,
-)
+from .models import min_saccade_minima_by_sampling
 from .report import (
     COMPUTED,
     FROM_DATA,
@@ -83,6 +87,29 @@ GEOMETRY_VECTOR = "vector"
 
 
 @dataclass(frozen=True)
+class MarkupSummary:
+    """Интегральные характеристики разметки: частота событий и доля времени удержания.
+
+    Обе величины выводятся из таблиц разметки, но по одному числу нельзя понять,
+    из чего оно получено, поэтому рядом лежат и слагаемые: длительность записи,
+    число строк в каждой таблице и то, сколько интервалов помечено невалидными.
+    """
+
+    t_total_s: float                 # длительность записи, [с]
+    n_events: int                    # переводов взора (при анализе движения глаза — саккад)
+    event_rate_hz: float             # событий в секунду, [1/с]
+    mean_event_duration_s: float
+    n_intervals: int                 # фиксаций (при анализе движения глаза — интервалов покоя)
+    intervals_total_duration_s: float
+    intervals_time_fraction: float   # доля записи, 0..1
+    mean_interval_duration_s: float
+    median_interval_duration_s: float
+    n_intervals_invalid: int         # помечено невалидными по длительности или разбросу
+    only_valid: bool                 # учитывались ли только валидные интервалы
+    params_used: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ScalarMarkup:
     """Результат разметки одномерной записи."""
 
@@ -91,7 +118,12 @@ class ScalarMarkup:
     gaze_shifts: pd.DataFrame        # переводы взора
     fixations: pd.DataFrame
     fs_hz: float
+    span_s: float = float("nan")     # длительность записи, [с]
     params_used: dict[str, Any] = field(default_factory=dict)
+
+    def summary(self, *, only_valid: bool = False) -> MarkupSummary:
+        """Интегральные характеристики этой разметки; см. `describe_markup`."""
+        return describe_markup(self, only_valid=only_valid)
 
 
 @dataclass(frozen=True)
@@ -105,7 +137,12 @@ class DirectionMarkup:
     fixations: pd.DataFrame
     fs_hz: float
     neutral_direction: tuple[float, float, float]
+    span_s: float = float("nan")     # длительность записи, [с]
     params_used: dict[str, Any] = field(default_factory=dict)
+
+    def summary(self, *, only_valid: bool = False) -> MarkupSummary:
+        """Интегральные характеристики этой разметки; см. `describe_markup`."""
+        return describe_markup(self, only_valid=only_valid)
 
 
 # ─────────────────────────────────────────────────────────── общие помощники
@@ -368,6 +405,7 @@ def _apply_fixation_criteria(
 
 
 # ═════════════════════════════════════════════════════ одномерная запись
+@guard_renamed
 def mark_gaze_events_1d(
         data: pd.DataFrame,
         *,
@@ -377,10 +415,10 @@ def mark_gaze_events_1d(
         speed_smoothing_points: int = 0,
         min_peak_velocity_deg_s: float | None = None,
         fixation_velocity_limit_deg_s: float | None = None,
-        min_event_duration_s: float = 0.006,
+        min_event_duration_s: float = DEFAULT_MIN_EVENT_DURATION_S,
         min_amplitude_deg: float | None = None,
         n_samples: int = N_SAMPLES_GAZE_SHIFT,
-        min_fixation_duration_s: float = DEFAULT_MIN_FIXATION_DURATION_S,
+        min_fixation_duration_s: float = MIN_FIXATION_DURATION_S,
         ideal_fixation_spread_deg: float = IDEAL_FIXATION_SPREAD_DEG,
         spread_limit_deg: float | None = None,
         spread_measure: str = "std",
@@ -388,10 +426,10 @@ def mark_gaze_events_1d(
         drop_short_fixations: bool = True,
         min_subprocess_duration_s: float | None = None,
         max_merge_gap_s: float | None = None,
-        trend_alpha: float = 0.05,
+        trend_alpha: float = DEFAULT_TREND_ALPHA,
         trend_slope_min: float | None = None,
         trim_fixations_by_velocity: bool = True,
-        fixation_velocity_window_s: float = 0.010,
+        fixation_velocity_window_s: float = DEFAULT_FIXATION_VELOCITY_WINDOW_S,
         homogeneity_split: bool = True,
         split_alpha: float = gm.SPLIT_ALPHA,
         split_min_points: int = gm.SPLIT_MIN_POINTS,
@@ -482,7 +520,7 @@ def mark_gaze_events_1d(
         alpha_deg=a,
         v_ang=speed,
         min_peak_velocity_deg_s=th.min_peak_velocity_deg_s,
-        fixation_velocity_limit_deg_s=th.fixation_velocity_limit_deg_s,
+        velocity_limit_deg_s=th.fixation_velocity_limit_deg_s,
         min_peak_width=_min_peak_width_points(min_event_duration_s, sampling.dt_median_s),
         min_amplitude_deg=th.min_amplitude_deg,
         amplitude_fn=amplitude_fn,
@@ -500,7 +538,7 @@ def mark_gaze_events_1d(
         alpha_deg=a,
         v_ang=speed,
         events=gaze_shifts,
-        fixation_velocity_limit_deg_s=th.fixation_velocity_limit_deg_s,
+        velocity_limit_deg_s=th.fixation_velocity_limit_deg_s,
         min_amplitude_deg=th.min_amplitude_deg,
         min_interval_duration_s=float(min_event_duration_s),
         min_subprocess_duration_s=sub_dur,
@@ -586,6 +624,7 @@ def mark_gaze_events_1d(
         gaze_shifts=gaze_shifts,
         fixations=fixations,
         fs_hz=float(sampling.fs_hz),
+        span_s=float(sampling.span_s),
         params_used=params_used,
     )
 
@@ -601,37 +640,38 @@ def _to_scalar_fixation_schema(fixations: pd.DataFrame) -> pd.DataFrame:
 
     out = fixations.rename(columns={
         "mean_eccentricity_deg": "mean_angle",
-        "slope_gaze_x_deg_s": "slope_angle_deg_s",
-        "p_gaze_x": "p_angle",
-        "mean_gaze_x": "mean_angle_position_deg",
+        "slope_horizontal_deg_s": "slope_angle_deg_s",
+        "p_horizontal": "p_angle",
+        "mean_horizontal_deg": "mean_angle_position_deg",
         "cov_fro_norm_deg2": "var_angle_deg2",
     })
     # Колонки второй (постоянной) оси смысла не имеют.
-    return pd.DataFrame(out.drop(columns=[c for c in ("slope_gaze_y_deg_s", "p_gaze_y", "mean_gaze_y") if c in out.columns]))
+    return pd.DataFrame(out.drop(columns=[c for c in ("slope_vertical_deg_s", "p_vertical", "mean_vertical_deg") if c in out.columns]))
 
 
 # ═════════════════════════════════════════════════ запись направления
+@guard_renamed
 def mark_gaze_events_direction(
         data: pd.DataFrame,
         *,
-        col_gaze_x: str,
-        col_gaze_y: str,
-        col_gaze_z: str | None = None,
+        col_horizontal: str,
+        col_vertical: str,
+        col_forward: str | None = None,
         col_time: str = "T_s",
         col_speed: str | None = None,
         speed_smoothing_points: int = 0,
         geometry: str = GEOMETRY_ANGLES,
         r: float | None = None,
         k: float = 1.0,
-        gaze_x_neutral: float = 0.0,
-        gaze_y_neutral: float = 0.0,
+        horizontal_neutral: float = 0.0,
+        vertical_neutral: float = 0.0,
         deg: bool = True,
         min_peak_velocity_deg_s: float | None = None,
         fixation_velocity_limit_deg_s: float | None = None,
-        min_event_duration_s: float = 0.006,
+        min_event_duration_s: float = DEFAULT_MIN_EVENT_DURATION_S,
         min_amplitude_deg: float | None = None,
         n_samples: int = N_SAMPLES_GAZE_SHIFT,
-        min_fixation_duration_s: float = DEFAULT_MIN_FIXATION_DURATION_S,
+        min_fixation_duration_s: float = MIN_FIXATION_DURATION_S,
         ideal_fixation_spread_deg: float = IDEAL_FIXATION_SPREAD_DEG,
         spread_limit_deg: float | None = None,
         spread_measure: str = "std",
@@ -639,10 +679,10 @@ def mark_gaze_events_direction(
         drop_short_fixations: bool = True,
         min_subprocess_duration_s: float | None = None,
         max_merge_gap_s: float | None = None,
-        trend_alpha: float = 0.05,
+        trend_alpha: float = DEFAULT_TREND_ALPHA,
         trend_slope_min: float | None = None,
         trim_fixations_by_velocity: bool = True,
-        fixation_velocity_window_s: float = 0.010,
+        fixation_velocity_window_s: float = DEFAULT_FIXATION_VELOCITY_WINDOW_S,
         homogeneity_split: bool = True,
         split_alpha: float = gm.SPLIT_ALPHA,
         split_min_points: int = gm.SPLIT_MIN_POINTS,
@@ -651,18 +691,30 @@ def mark_gaze_events_direction(
 ) -> DirectionMarkup:
     """Разметка записи направления взора: x-y или x-y-z.
 
-    Три параметризации входа приводятся к одному и тому же расчёту, поэтому
-    результаты сопоставимы между собой:
+    Три параметризации входа приводятся к одной и той же системе координат --
+    правой, с **X вправо, Y вверх, Z вперёд** (та же, что в модуле `direction`),
+    поэтому результаты сопоставимы между собой, а азимут всюду значит одно
+    и то же: 0° -- вправо, +90° -- вверх.
 
-    * `geometry="angles"` — `c1/c2` это yaw/pitch (`deg=True` — в градусах).
-      Нейтральное направление — (0, 0);
+    Имена параметров говорят о роли величины, а не о букве оси: `col_horizontal`
+    и `col_vertical` -- горизонталь и вертикаль, `col_forward` -- направление
+    вперёд (нужно только векторной параметризации). Прежние `col_gaze_x/y/z`
+    означали в трёх параметризациях три разные величины.
+
+    * `geometry="angles"` — `col_horizontal/col_vertical` это yaw/pitch
+      (`deg=True` — в градусах): положительный yaw отводит взор **вправо**,
+      положительный pitch — **вверх**. Нейтральное направление — (0, 0);
     * `geometry="plane"` — `c1/c2` это координаты точки на плоскости,
-      удалённой на `r` от центра вращения (обязательный параметр, в тех же
-      единицах, что координаты после умножения на `k`). Нейтральное положение —
-      `gaze_x_neutral`, `gaze_y_neutral`;
-    * `geometry="vector"` — `c1/c2/c3` это компоненты вектора направления;
-      нейтральное направление берётся как нормированное медианное направление
-      записи (допущение методики: медиана = наиболее комфортное направление).
+      удалённой на `r` от центра вращения (обязательный параметр). Единицы
+      **метрические** и одни и те же у координат (после умножения на `k`)
+      и у `r`: мм, см, м. Пиксели не годятся -- угол считается как отношение
+      смещения к `r`, и оно осмысленно, только если обе величины измерены одной
+      линейкой. Нейтральное положение — `horizontal_neutral`, `vertical_neutral`;
+    * `geometry="vector"` — `col_horizontal/col_vertical/col_forward` это
+      компоненты вектора направления в той же системе: X вправо, Y вверх,
+      Z вперёд. Нейтральное направление берётся как нормированное медианное
+      направление записи (допущение методики: медиана = наиболее комфортное
+      направление), поэтому установка прибора не по оси не мешает.
 
     Во всех случаях считаются:
 
@@ -685,17 +737,18 @@ def mark_gaze_events_direction(
             f"geometry должно быть {GEOMETRY_ANGLES!r}, {GEOMETRY_PLANE!r} "
             f"или {GEOMETRY_VECTOR!r}, получено {geometry!r}"
         )
-    if geometry == GEOMETRY_VECTOR and col_gaze_z is None:
-        raise ValueError("для geometry='vector' нужен третий столбец col_gaze_z")
+    if geometry == GEOMETRY_VECTOR and col_forward is None:
+        raise ValueError("для geometry='vector' нужен третий столбец col_forward")
     if geometry == GEOMETRY_PLANE and (r is None or not np.isfinite(r) or r <= 0):
         raise ValueError(
             "для geometry='plane' нужен параметр r > 0 — расстояние от центра "
-            "вращения до плоскости в тех же единицах, что координаты. "
-            "Для координат зрачка это радиус глаза, для точки взора на экране — "
-            "дистанция наблюдения. Без r угловой эксцентриситет не определён."
+            "вращения до плоскости в тех же МЕТРИЧЕСКИХ единицах, что координаты "
+            "(мм, см, м; пиксели не годятся). Для координат зрачка это радиус "
+            "глаза, для точки взора на экране — дистанция наблюдения. "
+            "Без r угловой эксцентриситет не определён."
         )
 
-    c1, c2, c3, t = _columns(data, col_gaze_x, col_gaze_y, col_gaze_z, col_time)
+    c1, c2, c3, t = _columns(data, col_horizontal, col_vertical, col_forward, col_time)
     sampling = estimate_sampling_rate(t)
     require_seconds(sampling)
     sub_dur, merge_gap = _resolve_durations(
@@ -712,26 +765,27 @@ def mark_gaze_events_direction(
     )
     trend_slope_min = float(th.fixation_velocity_limit_deg_s if trend_slope_min is None else trend_slope_min)
 
+    # Система координат единая для библиотеки (см. модуль `direction`):
+    # X вправо, Y вверх, Z вперёд; нейтральное направление -- (0, 0, 1).
+    # Все три параметризации приводятся именно к ней, поэтому азимут всюду
+    # значит одно и то же: 0 град -- вправо, +90 град -- вверх.
     if geometry == GEOMETRY_ANGLES:
         yaw = np.radians(c1) if deg else np.asarray(c1, dtype=float)
         pitch = np.radians(c2) if deg else np.asarray(c2, dtype=float)
-        # Ось «вперёд» — X, как в сферической схеме.
-        ux = np.cos(pitch) * np.cos(yaw)
-        uy = np.cos(pitch) * np.sin(yaw)
-        uz = np.sin(pitch)
-        neutral = (1.0, 0.0, 0.0)
-        stat_x, stat_y = np.degrees(yaw), np.degrees(pitch)
+        ux = np.cos(pitch) * np.sin(yaw)
+        uy = np.sin(pitch)
+        uz = np.cos(pitch) * np.cos(yaw)
+        neutral = (0.0, 0.0, 1.0)
         scheme = "yaw/pitch на единичной сфере, нейтраль (0, 0)"
     elif geometry == GEOMETRY_PLANE:
-        dx = (np.asarray(c1, dtype=float) - float(gaze_x_neutral)) * float(k)
-        dy = (np.asarray(c2, dtype=float) - float(gaze_y_neutral)) * float(k)
+        dx = (np.asarray(c1, dtype=float) - float(horizontal_neutral)) * float(k)
+        dy = (np.asarray(c2, dtype=float) - float(vertical_neutral)) * float(k)
         norm = np.sqrt(dx * dx + dy * dy + float(r) ** 2)
-        ux = float(r) / norm
-        uy = dx / norm
-        uz = dy / norm
-        neutral = (1.0, 0.0, 0.0)
-        stat_x, stat_y = dx, dy
-        scheme = f"плоскость на расстоянии r = {float(r):.4g}, нейтраль ({gaze_x_neutral}, {gaze_y_neutral})"
+        ux = dx / norm
+        uy = dy / norm
+        uz = float(r) / norm
+        neutral = (0.0, 0.0, 1.0)
+        scheme = f"плоскость на расстоянии r = {float(r):.4g}, нейтраль ({horizontal_neutral}, {vertical_neutral})"
     else:
         vx = np.asarray(c1, dtype=float)
         vy = np.asarray(c2, dtype=float)
@@ -744,17 +798,26 @@ def mark_gaze_events_direction(
         if not np.isfinite(med_norm) or med_norm == 0:
             raise ValueError("не удалось определить нейтральное направление: медиана нулевая")
         med = med / med_norm
-        # Поворачиваем систему так, чтобы нейтральное направление стало осью X.
+        # Нейтраль здесь не (0, 0, 1), а медианное направление записи: прибор
+        # мог быть установлен не строго по оси.
         neutral = (float(med[0]), float(med[1]), float(med[2]))
-        stat_x, stat_y = uy, uz
         scheme = "вектор направления, нейтраль = медианное направление записи"
+
+    # Пара статистик картинной плоскости -- всегда в ГРАДУСАХ, как бы ни был
+    # задан вход. Прежде она брала то, что пришло: yaw/pitch в угловой схеме,
+    # миллиметры в планарной, компоненты единичного вектора в векторной, -- и
+    # разброс, площади и наклоны выходили в этих же единицах, хотя имена колонок
+    # и порог модели говорят о градусах. На одной и той же записи фиксация
+    # признавалась невалидной по разбросу в угловой схеме и валидной в планарной.
+    stat_x = np.degrees(np.arctan2(ux, uz))                       # горизонтальный угол
+    stat_y = np.degrees(np.arcsin(np.clip(uy, -1.0, 1.0)))        # вертикальный угол
 
     if geometry == GEOMETRY_VECTOR:
         dot = np.clip(ux * neutral[0] + uy * neutral[1] + uz * neutral[2], -1.0, 1.0)
     else:
-        dot = np.clip(ux, -1.0, 1.0)
+        dot = np.clip(uz, -1.0, 1.0)
     eccentricity = np.degrees(np.arccos(dot))                # [град]
-    azimuth = np.degrees(np.arctan2(uz, uy))                 # [град]
+    azimuth = np.degrees(np.arctan2(uy, ux))                 # [град]
 
     # Полная угловая скорость: модуль производной единичного вектора.
     speed = np.degrees(np.sqrt(
@@ -782,7 +845,7 @@ def mark_gaze_events_direction(
         alpha_deg=eccentricity,
         v_ang=speed,
         min_peak_velocity_deg_s=th.min_peak_velocity_deg_s,
-        fixation_velocity_limit_deg_s=th.fixation_velocity_limit_deg_s,
+        velocity_limit_deg_s=th.fixation_velocity_limit_deg_s,
         min_peak_width=_min_peak_width_points(min_event_duration_s, sampling.dt_median_s),
         min_amplitude_deg=th.min_amplitude_deg,
         amplitude_fn=amplitude_fn,
@@ -800,8 +863,8 @@ def mark_gaze_events_direction(
 
     fixations_raw = _build_fixations_between_saccades(
         # Площади заметаемой области -- характеристики взора и только его:
-        # они имеют смысл как проекция на неподвижное пространство. В глазной
-        # ветке и в одномерной записи колонок нет.
+        # они имеют смысл как проекция на неподвижное пространство. При анализе
+        # данных движения глаза и в одномерной записи колонок нет.
         with_area=True,
         t=t,
         x=stat_x,
@@ -809,7 +872,7 @@ def mark_gaze_events_direction(
         alpha_deg=eccentricity,
         v_ang=speed,
         events=gaze_shifts,
-        fixation_velocity_limit_deg_s=th.fixation_velocity_limit_deg_s,
+        velocity_limit_deg_s=th.fixation_velocity_limit_deg_s,
         min_amplitude_deg=th.min_amplitude_deg,
         min_interval_duration_s=float(min_event_duration_s),
         min_subprocess_duration_s=sub_dur,
@@ -906,5 +969,141 @@ def mark_gaze_events_direction(
         fixations=fixations,
         fs_hz=float(sampling.fs_hz),
         neutral_direction=neutral,
+        span_s=float(sampling.span_s),
+        params_used=params_used,
+    )
+
+
+# ═══════════════════════════════════════ интегральные характеристики разметки
+def _interval_durations_s(frame: pd.DataFrame) -> np.ndarray:
+    """Длительности строк таблицы: готовая колонка либо разность границ, `[с]`."""
+    if frame is None or len(frame) == 0:
+        return np.zeros(0, dtype=float)
+    if "duration_s" in frame.columns:
+        return frame["duration_s"].to_numpy(dtype=float)
+    return (frame["t_end_s"] - frame["t_start_s"]).to_numpy(dtype=float)
+
+
+def _invalid_mask(frame: pd.DataFrame) -> np.ndarray:
+    """Строки, помеченные не прошедшими критерий длительности или разброса."""
+    invalid = np.zeros(len(frame), dtype=bool)
+    for column in ("duration_valid", "spread_valid"):
+        if column in frame.columns:
+            invalid |= ~frame[column].to_numpy(dtype=bool)
+    return invalid
+
+
+def describe_markup(
+        markup: ScalarMarkup | DirectionMarkup | None = None,
+        *,
+        events: pd.DataFrame | None = None,
+        intervals: pd.DataFrame | None = None,
+        span_s: float | None = None,
+        only_valid: bool = False,
+) -> MarkupSummary:
+    """Интегральные характеристики записи по её разметке.
+
+    Считает то, что из таблиц выводится, но в них не лежит:
+
+    * **частота событий** — число переводов взора (при анализе данных движения
+      глаза — саккад), делённое на длительность записи, `[1/с]`;
+    * **доля времени удержания** — суммарная длительность фиксаций (при анализе
+      данных движения глаза — интервалов покоя), делённая на длительность записи, 0…1.
+
+    Знаменатель у обеих величин один: `span_s`, промежуток от первого отсчёта
+    записи до последнего. Пропуски и моргания из него не вычитаются — если
+    запись рвётся, доля времени удержания занижена, и это видно по `t_total_s`
+    рядом с суммарной длительностью.
+
+    Величины зависят от порогов разметки, а те — от частоты записи, поэтому
+    сопоставимы они между записями одной частоты либо после приведения записей
+    к общей частоте, как и остальные характеристики методики.
+
+    Параметры:
+      markup      — результат `mark_gaze_events_1d` или `mark_gaze_events_direction`;
+      events, intervals, span_s — таблицы и длительность записи напрямую: так
+                    характеристики считаются и при анализе данных движения глаза
+                    (`mark_eye_rest_from_angles`), где возвращается не объект,
+                    а тройка. Заданные явно, они важнее взятых из `markup`;
+      only_valid  — учитывать только интервалы, прошедшие критерии длительности
+                    и разброса. По умолчанию считается то, что лежит в таблице:
+                    что отбрасывать, решено при разметке (`drop_short_fixations`,
+                    `drop_invalid_spread`), а критерий разброса в методике ещё
+                    в разработке. Число помеченных невалидными возвращается всегда.
+
+    Возвращает `MarkupSummary`.
+    """
+    if markup is not None:
+        events = markup.gaze_shifts if events is None else events
+        intervals = markup.fixations if intervals is None else intervals
+        span_s = markup.span_s if span_s is None else span_s
+    if events is None or intervals is None or span_s is None:
+        raise ValueError(
+            "нужен либо markup (результат разметки), либо все три величины: "
+            "events, intervals и span_s — длительность записи в секундах"
+        )
+
+    t_total = float(span_s)
+    n_events = int(len(events))
+    event_durations = _interval_durations_s(events)
+
+    invalid = _invalid_mask(intervals)
+    n_invalid = int(invalid.sum())
+    kept = intervals.loc[~invalid] if (only_valid and n_invalid) else intervals
+    durations = _interval_durations_s(kept)
+    durations = durations[np.isfinite(durations)]
+
+    total = float(durations.sum()) if durations.size else 0.0
+    measurable = np.isfinite(t_total) and t_total > 0
+    rate = n_events / t_total if measurable else float("nan")
+    fraction = total / t_total if measurable else float("nan")
+
+    def _mean(values: np.ndarray) -> float:
+        values = values[np.isfinite(values)]
+        return float(values.mean()) if values.size else float("nan")
+
+    def _median(values: np.ndarray) -> float:
+        values = values[np.isfinite(values)]
+        return float(np.median(values)) if values.size else float("nan")
+
+    invalid_note = (
+        f"невалидными помечено {n_invalid} из {len(intervals)}: "
+        + ("не учтены" if only_valid else "учтены, см. only_valid")
+    ) if n_invalid else "невалидными не помечен ни один"
+
+    params_used = log_computation(
+        "интегральные характеристики разметки",
+        {
+            "запись": Param(t_total, "с", FROM_DATA if markup is not None else FROM_USER),
+            "событий": Param(n_events, "", COMPUTED,
+                             f"средняя длительность {_mean(event_durations) * 1000:.1f} мс"),
+            "частота событий": Param(
+                rate, "1/с", COMPUTED,
+                f"{rate * 60:.3g} в минуту" if measurable else "длительность записи неизвестна"),
+            "интервалов удержания": Param(int(len(durations)), "", COMPUTED, invalid_note),
+            "суммарная длительность интервалов": Param(
+                total, "с", COMPUTED,
+                f"{fraction * 100:.1f} % записи" if measurable else ""),
+            "доля времени удержания": Param(fraction, "", COMPUTED,
+                                            "знаменатель — длительность записи целиком"),
+            "длительность интервала": Param(
+                f"медиана {_median(durations) * 1000:.0f} мс, "
+                f"среднее {_mean(durations) * 1000:.0f} мс",
+                source=COMPUTED) if durations.size else Param("нет интервалов", source=COMPUTED),
+        },
+    )
+
+    return MarkupSummary(
+        t_total_s=t_total,
+        n_events=n_events,
+        event_rate_hz=float(rate),
+        mean_event_duration_s=_mean(event_durations),
+        n_intervals=int(len(durations)),
+        intervals_total_duration_s=total,
+        intervals_time_fraction=float(fraction),
+        mean_interval_duration_s=_mean(durations),
+        median_interval_duration_s=_median(durations),
+        n_intervals_invalid=n_invalid,
+        only_valid=bool(only_valid),
         params_used=params_used,
     )

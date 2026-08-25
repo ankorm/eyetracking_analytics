@@ -28,10 +28,10 @@
 
 * Kruchinina A., Yakushev A. G. Parametrization of Saccade Trajectories //
   Moscow University Mechanics Bulletin. 2018. Vol. 73, no. 4. P. 97-100.
-  DOI 10.3103/S0027133018340052
+  DOI: https://doi.org/10.3103/S0027133018340052
 * Kruchinina A. Optimal time task in saccadic eye movement // Russian Journal
   of Biomechanics. 2020. Vol. 24, no. 1. P. 33-39.
-  DOI 10.15593/RJBiomech/2020.1.04
+  DOI: https://doi.org/10.15593/RJBiomech/2020.1.04
 
 При использовании этого модуля в исследовании ссылаться нужно на обе (раздел
 `references` в `CITATION.cff`) -- дополнительно к статье главной
@@ -45,6 +45,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from scipy.optimize import fsolve
+
+from .constants import DEFAULT_SACCADE_MODEL_DT, DEFAULT_SACCADE_TEMPLATE_FS_HZ
 
 __all__ = [
     "SaccadeModel",
@@ -148,7 +150,7 @@ def trajectory(
         model: SaccadeModel | None = None,
         *,
         switch: tuple[float, float, float] | None = None,
-        dt: float = 0.001,
+        dt: float = DEFAULT_SACCADE_MODEL_DT,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Безразмерная траектория: угол, скорость, управление.
 
@@ -215,9 +217,9 @@ def saccade_template(
         amplitude_deg: float,
         duration_s: float,
         *,
-        fs_hz: float = 1000.0,
+        fs_hz: float = DEFAULT_SACCADE_TEMPLATE_FS_HZ,
         model: SaccadeModel | None = None,
-        dt: float = 0.001,
+        dt: float = DEFAULT_SACCADE_MODEL_DT,
 ) -> pd.DataFrame:
     """Одна траектория семейства: угол и скорость во времени.
 
@@ -237,9 +239,9 @@ def saccade_template_family(
         amplitudes_deg: Any,
         durations_s: Any,
         *,
-        fs_hz: float = 1000.0,
+        fs_hz: float = DEFAULT_SACCADE_TEMPLATE_FS_HZ,
         model: SaccadeModel | None = None,
-        dt: float = 0.001,
+        dt: float = DEFAULT_SACCADE_MODEL_DT,
 ) -> pd.DataFrame:
     """Семейство траекторий: одна форма на сетке амплитуд и длительностей.
 
@@ -268,7 +270,7 @@ def match_saccade_templates(
         col_time: str = "T_s",
         model: SaccadeModel | None = None,
         durations_s: Any = None,
-        dt: float = 0.001,
+        dt: float = DEFAULT_SACCADE_MODEL_DT,
         pad_s: float = 0.0,
 ) -> pd.DataFrame:
     """Ищет в записи кривые, похожие на траектории семейства.

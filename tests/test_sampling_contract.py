@@ -87,12 +87,12 @@ def test_milliseconds_axis_rejected_in_markup() -> None:
     df_ms["T_s"] = df_ms["T_s"] * 1000.0
     for call in (
         lambda d: gm.mark_eye_data_with_full_angle_from_angles(
-            d, col_gaze_x="gaze_yaw", col_gaze_y="gaze_pitch", col_time="T_s"),
+            d, col_horizontal="gaze_yaw", col_vertical="gaze_pitch", col_time="T_s"),
         lambda d: mk.mark_gaze_events_direction(
-            d, col_gaze_x="gaze_yaw", col_gaze_y="gaze_pitch", geometry="angles", col_time="T_s"),
+            d, col_horizontal="gaze_yaw", col_vertical="gaze_pitch", geometry="angles", col_time="T_s"),
         lambda d: mk.mark_gaze_events_1d(d, col_gaze_angle="gaze_yaw", col_time="T_s"),
         lambda d: gm.mark_eye_data_with_sigmoid(
-            d, col_gaze_x="gaze_yaw", col_gaze_y="gaze_pitch", col_time="T_s"),
+            d, col_horizontal="gaze_yaw", col_vertical="gaze_pitch", col_time="T_s"),
     ):
         with pytest.raises(ValueError, match="миллисекунд"):
             call(df_ms)

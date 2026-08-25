@@ -1,7 +1,7 @@
 """Разметка и анализ движений глаза и взора.
 
-Различение из `Sci_base.md`, определяющее всю терминологию: **движение глаза** —
-относительно черепа, его быстрое событие называется саккадой; **взор** —
+Различение из `docs/Sci_base.md`, определяющее всю терминологию: **движение глаза** —
+относительно головы, его быстрое событие называется саккадой; **взор** —
 ориентация относительно окружающего пространства, его быстрое событие —
 **перевод взора**.
 
@@ -23,7 +23,7 @@
     enable_report_logging()
     result = mark_gaze_events_direction(
         pd.read_csv("record.csv"),
-        col_gaze_x="gaze_yaw", col_gaze_y="gaze_pitch", col_time="T_s",
+        col_horizontal="gaze_yaw", col_vertical="gaze_pitch", col_time="T_s",
     )
 
 Пороги по умолчанию выводятся из фактической частоты записи моделью главной
@@ -33,16 +33,63 @@ from __future__ import annotations
 
 __version__ = "0.2.0"
 
+# ── заданные константы: одно объявление на величину, см. `constants.py` ──
+from . import constants as _constants
+
 # ── разметка событий ──
 # ── метрики ──
 # ── моргания ──
 from .blinks import (
-    DEFAULT_MIN_BLINK_GAP_S,
     blink_mask,
     describe_blinks,
     find_blinks_by_gaps,
     find_blinks_by_threshold,
     refine_blink_bounds,
+)
+from .constants import (
+    DEFAULT_BCEA_PROBABILITY,
+    DEFAULT_FIXATION_VELOCITY_WINDOW_S,
+    DEFAULT_MAX_AXIS_DT_S,
+    DEFAULT_MIN_BLINK_GAP_S,
+    DEFAULT_MIN_EVENT_DURATION_S,
+    DEFAULT_REFINE_SEARCH_S,
+    DEFAULT_SACCADE_MODEL_DT,
+    DEFAULT_SACCADE_TEMPLATE_FS_HZ,
+    DEFAULT_SIGMOID_P_HI,
+    DEFAULT_SIGMOID_P_LO,
+    DEFAULT_SIGMOID_R2_MIN,
+    DEFAULT_SIGMOID_WINDOW_S,
+    DEFAULT_TREND_ALPHA,
+    EYE_RADIUS_MM,
+    IDEAL_FIXATION_SPREAD_DEG,
+    IDEAL_FIXATION_VELOCITY_DEG_S,
+    LEGACY_GAUSSIAN_SIGMA_POINTS,
+    LEGACY_MIN_PEAK_WIDTH_POINTS,
+    LEGACY_SIGMOID_MIN_AMPLITUDE_DEG,
+    LEGACY_SIGMOID_MIN_PEAK_VELOCITY_DEG_S,
+    MAX_EYE_VELOCITY_DEG_S,
+    MERGE_STAT_TOLERANCE,
+    MIN_FIXATION_DURATION_S,
+    N_SAMPLES_GAZE_SHIFT,
+    N_SAMPLES_SACCADE,
+    SPLIT_ALPHA,
+    SPLIT_COV_WEIGHT,
+    SPLIT_MIN_POINTS,
+    SPLIT_SCORE_MIN_ALONE,
+    SPLIT_SCORE_MIN_WITH_PVALUE,
+)
+
+# ── вход: ориентация головы и глаза -> направление взора ──
+from .direction import (
+    DEFAULT_QUATERNION_COLUMNS as DIRECTION_QUATERNION_COLUMNS,
+)
+from .direction import (
+    DEFAULT_VECTOR_COLUMNS,
+    FORWARD_XYZ,
+    REPRESENTATIONS,
+    GazeDirection,
+    gaze_direction,
+    orientation_to_direction,
 )
 from .eyetracking_funs import (
     BilinearFit,
@@ -56,7 +103,6 @@ from .eyetracking_funs import (
 
 # ── сырые данные глаза ──
 from .for_raw_data import (
-    DEFAULT_EYE_RADIUS_MM,
     VelocityResult,
     angular_velocity_at_rate,
     find_central_position,
@@ -67,7 +113,6 @@ from .for_raw_data import (
 
 # ── препроцессинг и статистика интервалов ──
 from .gaze_mark import (
-    DEFAULT_BCEA_PROBABILITY,
     axis_column_map,
     bcea_deg2,
     convex_hull_area_deg2,
@@ -82,18 +127,15 @@ from .gaze_mark import (
 )
 from .markup import (
     DirectionMarkup,
+    MarkupSummary,
     ScalarMarkup,
+    describe_markup,
     mark_gaze_events_1d,
     mark_gaze_events_direction,
 )
 
 # ── модель порогов по частоте ──
 from .models import (
-    DEFAULT_MIN_FIXATION_DURATION_S,
-    IDEAL_FIXATION_SPREAD_DEG,
-    IDEAL_FIXATION_VELOCITY_DEG_S,
-    N_SAMPLES_GAZE_SHIFT,
-    N_SAMPLES_SACCADE,
     MinDetectableSaccade,
     PowerDurationModel,
     approx_params_by_fs,
@@ -140,20 +182,56 @@ from .sampling import (
 
 __all__ = [
     "__version__",
+    # заданные константы (модуль `constants`)
+    "EYE_RADIUS_MM",
+    "MAX_EYE_VELOCITY_DEG_S",
+    "IDEAL_FIXATION_VELOCITY_DEG_S",
+    "IDEAL_FIXATION_SPREAD_DEG",
+    "MIN_FIXATION_DURATION_S",
+    "DEFAULT_MIN_EVENT_DURATION_S",
+    "DEFAULT_MAX_AXIS_DT_S",
+    "DEFAULT_FIXATION_VELOCITY_WINDOW_S",
+    "DEFAULT_TREND_ALPHA",
+    "DEFAULT_BCEA_PROBABILITY",
+    "DEFAULT_MIN_BLINK_GAP_S",
+    "DEFAULT_REFINE_SEARCH_S",
+    "SPLIT_ALPHA",
+    "SPLIT_MIN_POINTS",
+    "SPLIT_SCORE_MIN_WITH_PVALUE",
+    "SPLIT_SCORE_MIN_ALONE",
+    "SPLIT_COV_WEIGHT",
+    "MERGE_STAT_TOLERANCE",
+    "DEFAULT_SIGMOID_P_LO",
+    "DEFAULT_SIGMOID_P_HI",
+    "DEFAULT_SIGMOID_WINDOW_S",
+    "DEFAULT_SIGMOID_R2_MIN",
+    "LEGACY_SIGMOID_MIN_PEAK_VELOCITY_DEG_S",
+    "LEGACY_SIGMOID_MIN_AMPLITUDE_DEG",
+    "LEGACY_MIN_PEAK_WIDTH_POINTS",
+    "LEGACY_GAUSSIAN_SIGMA_POINTS",
+    "DEFAULT_SACCADE_MODEL_DT",
+    "DEFAULT_SACCADE_TEMPLATE_FS_HZ",
     # разметка
     "mark_gaze_events_direction",
     "mark_gaze_events_1d",
     "DirectionMarkup",
     "ScalarMarkup",
+    # вход: ориентация -> направление взора
+    "gaze_direction",
+    "orientation_to_direction",
+    "GazeDirection",
+    "REPRESENTATIONS",
+    "FORWARD_XYZ",
+    "DEFAULT_VECTOR_COLUMNS",
+    "DIRECTION_QUATERNION_COLUMNS",
+    "describe_markup",
+    "MarkupSummary",
     # модель порогов
     "min_saccade_minima_by_sampling",
     "approx_params_by_fs",
     "max_increment_deg",
     "MinDetectableSaccade",
     "PowerDurationModel",
-    "IDEAL_FIXATION_VELOCITY_DEG_S",
-    "IDEAL_FIXATION_SPREAD_DEG",
-    "DEFAULT_MIN_FIXATION_DURATION_S",
     "N_SAMPLES_SACCADE",
     "N_SAMPLES_GAZE_SHIFT",
     # модель траектории саккады
@@ -176,7 +254,6 @@ __all__ = [
     "smooth_eye_position_mm",
     "angular_velocity_at_rate",
     "VelocityResult",
-    "DEFAULT_EYE_RADIUS_MM",
     # ориентация
     "angles_from_orientation",
     "angular_distance_deg",
@@ -199,7 +276,6 @@ __all__ = [
     "refine_blink_bounds",
     "blink_mask",
     "describe_blinks",
-    "DEFAULT_MIN_BLINK_GAP_S",
     # метрики
     "ksv",
     "KsvResult",
@@ -208,7 +284,6 @@ __all__ = [
     "analyze_stable_intervals",
     "bcea_deg2",
     "convex_hull_area_deg2",
-    "DEFAULT_BCEA_PROBABILITY",
     "BilinearRegression",
     "BilinearFit",
     # журнал
@@ -218,3 +293,8 @@ __all__ = [
     "log_computation",
     "Param",
 ]
+
+
+def __getattr__(name: str):
+    """Прежние имена констант объясняют замену, а не молча исчезают."""
+    return _constants.renamed_constant(name)

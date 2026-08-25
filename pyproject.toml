@@ -52,9 +52,6 @@ filterwarnings = [
 line-length = 100
 target-version = "py310"
 src = ["src", "tests"]
-# docs/history -- сохранённая прежняя версия API: исторический документ,
-# править его нельзя, поэтому и линтовать незачем.
-extend-exclude = ["docs/history"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]

@@ -3,9 +3,12 @@
 ###################################################
 
 from dataclasses import dataclass
+from typing import NoReturn
 
 import numpy as np
 
+from . import constants as _c
+from .constants import EYE_RADIUS_MM
 from .report import (
     COMPUTED,
     FROM_DATA,
@@ -21,6 +24,12 @@ from .sampling import (
     require_seconds,
     resolve_target_rate,
 )
+
+
+def __getattr__(name: str) -> NoReturn:
+    """Прежние имена констант объясняют замену, а не молча исчезают."""
+    return _c.renamed_constant(name)
+
 
 try:
     from numba import njit
@@ -63,8 +72,8 @@ class VelocityResult:
 # расчет скорости с приведением к выбранной частоте
 def angular_velocity_at_rate(
         t_s,
-        gaze_x,
-        gaze_y,
+        horizontal,
+        vertical,
         fs_hz: float | None = None,
 ) -> VelocityResult:
     """
@@ -86,8 +95,8 @@ def angular_velocity_at_rate(
 
     Параметры:
       t_s     — отсчёты времени в СЕКУНДАХ (обязательны)
-      gaze_x — первая угловая координата взора, град
-      gaze_y — вторая угловая координата взора, град
+      horizontal — первая угловая координата взора, град
+      vertical — вторая угловая координата взора, град
       fs_hz         — частота расчёта, Гц; None = частота записи
 
     Возвращает:
@@ -95,11 +104,11 @@ def angular_velocity_at_rate(
       (использованная частота, частота записи, признак децимации)
     """
     t = np.asarray(t_s, dtype=float).ravel()
-    x = np.asarray(gaze_x, dtype=float).ravel()
-    y = np.asarray(gaze_y, dtype=float).ravel()
+    x = np.asarray(horizontal, dtype=float).ravel()
+    y = np.asarray(vertical, dtype=float).ravel()
     if not (t.size == x.size == y.size):
         raise ValueError(
-            f"t_s, gaze_x и gaze_y должны быть одной длины, "
+            f"t_s, horizontal и vertical должны быть одной длины, "
             f"получено {t.size}, {x.size}, {y.size}"
         )
 
@@ -432,19 +441,16 @@ def find_central_position(eye_x, eye_y, eye_z=None):
     z_c = float(np.nanmedian(np.asarray(eye_z, dtype=float))) if eye_z is not None else None
     return [x_c, y_c, z_c]
 
-#: Радиус вращения зрачка вокруг центра глаза, мм. Пункт C-1 аудита:
-#: решение автора методики — это **физиологическая** (антропометрическая)
-#: константа, а не параметр прибора, поэтому она уместна как значение
-#: по умолчанию. Переопределяется, если для испытуемого известно иное значение.
-DEFAULT_EYE_RADIUS_MM: float = 12.0
-
-
-def make_okulogram(eye_coord, neutral=None, r_eye: float = DEFAULT_EYE_RADIUS_MM):
+def make_okulogram(eye_coord, neutral=None, r_eye: float = EYE_RADIUS_MM):
     """
     Строит окулограмму: переводит линейное смещение зрачка в угол поворота глаза.
 
     Допущение методики: зрачок движется по сфере постоянного радиуса `r_eye`
     вокруг центра глаза, поэтому угол равен `atan2(x - x_c, r_eye)`.
+
+    Это метрический вход, а не основной: по умолчанию координаты взора и глаза
+    задаются углами в градусах. Порядок здесь -- миллиметры -> перевод в углы ->
+    дальше стандартная разметка теми же функциями с теми же порогами.
 
     Параметры:
       eye_coord - смещение зрачка по одной оси, мм
@@ -452,17 +458,15 @@ def make_okulogram(eye_coord, neutral=None, r_eye: float = DEFAULT_EYE_RADIUS_MM
               (допущение методики: медиана соответствует наиболее комфортному
               направлению взгляда, поскольку глазодвигательные мышцы быстрые
               и длительное напряжение им несвойственно)
-      r_eye - радиус вращения зрачка, мм; физиологическая константа,
-              по умолчанию 12 мм
+      r_eye - радиус вращения зрачка, мм; физиологическая константа
+              EYE_RADIUS_MM = 12.0 мм
 
     Возвращает:
       массив углов в градусах, той же длины что `x`
 
-    Пиксели сюда подавать нельзя: `r_eye` в миллиметрах, и размерность
-    не сойдётся. Сначала переведите px в мм по известному анатомическому
-    размеру на кадре либо считайте угол планарной геометрией
-    (`mark_gaze_events_direction(geometry="plane")`, где `r` задаётся в тех же
-    единицах, что координаты).
+    Другие единицы сюда подавать нельзя: `r_eye` в миллиметрах, и размерность
+    не сойдётся. Библиотека не предназначена для измерений в пикселях или
+    метрах -- см. «Принятые допущения» в `docs/Sci_base-rus.md`.
 
     **Про бинокулярные записи.** Для приборов вроде Vive Pro Eye, дающих
     положение каждого глаза отдельно, функция применяется к каждому глазу

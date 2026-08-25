@@ -6,9 +6,14 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 
+from .constants import DEFAULT_TREND_ALPHA, N_SAMPLES_SACCADE
 from .for_raw_data import angular_velocity_at_rate
-from .gaze_mark import build_stable_intervals_between_events, interval_stats_by_time
-from .models import N_SAMPLES_SACCADE, min_saccade_minima_by_sampling
+from .gaze_mark import (
+    build_stable_intervals_between_events,
+    guard_renamed,
+    interval_stats_by_time,
+)
+from .models import min_saccade_minima_by_sampling
 from .report import (
     COMPUTED,
     FROM_DATA,
@@ -281,14 +286,22 @@ class KsvResult:
 
 def ksv(
         t_s,
-        gaze_x,
-        gaze_y,
+        horizontal,
+        vertical,
         v0_deg_s: float | None = None,
         fs_hz: float | None = None,
 ) -> KsvResult:
     """
     Коэффициент стабилизации взора: доля времени, в течение которой угловая
     скорость не превышает порог.
+
+    Критерий не собственный: он предложен как критерий качества зрительного
+    слежения при нистагме в работе Shtefanova O. Yu., Yakushev A. G. A quality
+    criterion for visual tracking during nystagmus // Moscow University
+    Mechanics Bulletin. 2008. Vol. 63, no. 4. P. 100-102.
+    DOI: https://doi.org/10.3103/S0027133008040043
+    Здесь он считается на той же идее, но с порогом, выводимым из частоты
+    записи по модели главной последовательности.
 
     Зависимость от частоты — часть методики: порог `v0_deg_s` по умолчанию берётся из
     модели главной последовательности, а она даёт тем меньший порог, чем выше
@@ -310,15 +323,15 @@ def ksv(
 
     Параметры:
       t_s     — отсчёты времени в СЕКУНДАХ (обязательны)
-      gaze_x — координата x (град или пикс)
-      gaze_y — координата y
+      horizontal — координата x (град или пикс)
+      vertical — координата y
       v0_deg_s         — порог скорости; None = из модели по эффективной частоте
       fs_hz         — частота расчёта, Гц; None = частота записи
 
     Возвращает:
       KsvResult
     """
-    vel = angular_velocity_at_rate(t_s, gaze_x, gaze_y, fs_hz=fs_hz)
+    vel = angular_velocity_at_rate(t_s, horizontal, vertical, fs_hz=fs_hz)
 
     # Эффективная разрешающая способность: децимация её снижает, интерполяция
     # не повышает, поэтому порог модели берём по минимуму из двух частот.
@@ -408,14 +421,14 @@ def ksv(
     )
 
 
-def tr_length(data, t_start_s, t_end_s, col_gaze_x, col_gaze_y, col_time='T_s'):
+def tr_length(data, t_start_s, t_end_s, col_horizontal, col_vertical, col_time='T_s'):
     """
     Вычисляет длину траектории (суммарное перемещение) на интервале [t1, t2].
     Параметры:
       data - DataFrame с данными
       t_start_s, t_end_s - границы временного интервала, с
-      col_gaze_x     - имя колонки X
-      col_gaze_y     - имя колонки Y
+      col_horizontal     - имя колонки X
+      col_vertical     - имя колонки Y
       col_time    - имя колонки времени (по умолчанию 'T_s')
     Возвращает:
       total_length - суммарная длина траектории
@@ -424,7 +437,7 @@ def tr_length(data, t_start_s, t_end_s, col_gaze_x, col_gaze_y, col_time='T_s'):
     if filtered_data.shape[0] < 2:
         return 0.0
 
-    coords = filtered_data[[col_gaze_x, col_gaze_y]].to_numpy(dtype=float)
+    coords = filtered_data[[col_horizontal, col_vertical]].to_numpy(dtype=float)
     diffs = np.diff(coords, axis=0)
     segment_lengths = np.hypot(diffs[:, 0], diffs[:, 1])
 
@@ -446,17 +459,18 @@ def find_std_fx(data, t_start_s, t_end_s, col_value, col_time='T_s'):
     return np.std(filtered_data[col_value])
 
 
+@guard_renamed
 def analyze_stable_intervals(
         df_events: pd.DataFrame,
         data: pd.DataFrame,
         *,
-        col_gaze_x: str,
-        col_gaze_y: str,
+        col_horizontal: str,
+        col_vertical: str,
         col_time="T_s",
         col_t_start: str = "t_start_s",
         col_t_end: str = "t_end_s",
         min_gap_s: float = 0.0,
-        trend_alpha: float = 0.05,
+        trend_alpha: float = DEFAULT_TREND_ALPHA,
         trend_slope_min: float = 0.0,
 ) -> pd.DataFrame:
     """
@@ -481,7 +495,7 @@ def analyze_stable_intervals(
         tf = float(r["t_stable_end"])
 
         ex, ey, cov, n_valid, sx, px, sy, py, has_trend = interval_stats_by_time(
-            data, t0, tf, col_gaze_x=col_gaze_x, col_gaze_y=col_gaze_y, col_time=col_time,
+            data, t0, tf, col_horizontal=col_horizontal, col_vertical=col_vertical, col_time=col_time,
             trend_alpha=trend_alpha, trend_slope_min=trend_slope_min
         )
 
@@ -489,14 +503,14 @@ def analyze_stable_intervals(
 
         raw.append({
             **r.to_dict(),
-            "mean_gaze_x": ex,
-            "mean_gaze_y": ey,
+            "mean_horizontal_deg": ex,
+            "mean_vertical_deg": ey,
             "fro_cov": fro_cov,
             "n_valid": n_valid,
-            "slope_gaze_x_deg_s": sx,
-            "p_gaze_x": px,
-            "slope_gaze_y_deg_s": sy,
-            "p_gaze_y": py,
+            "slope_horizontal_deg_s": sx,
+            "p_horizontal": px,
+            "slope_vertical_deg_s": sy,
+            "p_vertical": py,
             "has_trend": bool(has_trend),
         })
 

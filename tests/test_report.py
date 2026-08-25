@@ -20,7 +20,7 @@ from eyetracking_analytics import report as rp
 from . import synthetic
 
 _SIGMOID_KW = dict(
-    col_gaze_x="gaze_yaw", col_gaze_y="gaze_pitch", col_time="T_s",
+    col_horizontal="gaze_yaw", col_vertical="gaze_pitch", col_time="T_s",
     min_peak_velocity_deg_s=30.0, min_amplitude_deg=0.5, max_axis_dt_s=0.012, dt_window_s=0.05,
     r2_min_keep=0.5,
 )
@@ -85,7 +85,7 @@ def test_markup_results_carry_params_used() -> None:
         _assert_params_documented(frame.attrs["params_used"])
 
     _, s2, f2 = gm.mark_eye_data_with_full_angle_from_angles(
-        df, col_gaze_x="gaze_yaw", col_gaze_y="gaze_pitch", col_time="T_s")
+        df, col_horizontal="gaze_yaw", col_vertical="gaze_pitch", col_time="T_s")
     for frame in (s2, f2):
         _assert_params_documented(frame.attrs["params_used"])
         assert "схема расчёта" in frame.attrs["params_used"]

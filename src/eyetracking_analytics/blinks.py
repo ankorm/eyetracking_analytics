@@ -28,15 +28,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from .constants import DEFAULT_MIN_BLINK_GAP_S, DEFAULT_REFINE_SEARCH_S
 from .report import COMPUTED, FROM_DATA, FROM_USER, Param, log_computation
-
-#: Минимальный разрыв в потоке достоверных отсчётов, который считается морганием.
-#: Значение из практики: моргание человека длится 100…400 мс, а 50 мс — нижняя
-#: граница, ниже которой разрыв объясняется потерей одного-двух кадров.
-DEFAULT_MIN_BLINK_GAP_S: float = 0.050
-
-#: Окно поиска смены монотонности при уточнении границ, с.
-DEFAULT_REFINE_SEARCH_S: float = 0.100
 
 BLINK_COLUMNS: tuple[str, ...] = ("t_start_s", "t_end_s", "duration_s")
 

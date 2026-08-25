@@ -4,7 +4,23 @@
 
 from dataclasses import dataclass
 from math import log
-from typing import NamedTuple
+from typing import NamedTuple, NoReturn
+
+# Все заданные константы объявлены в одном месте (`constants.py`) и только
+# импортируются сюда: одно объявление на величину.
+from . import constants as _c
+from .constants import (
+    IDEAL_FIXATION_SPREAD_DEG,
+    IDEAL_FIXATION_VELOCITY_DEG_S,
+    MAX_EYE_VELOCITY_DEG_S,
+    MIN_FIXATION_DURATION_S,
+    N_SAMPLES_SACCADE,
+)
+
+
+def __getattr__(name: str) -> NoReturn:
+    """Прежние имена констант объясняют замену, а не молча исчезают."""
+    return _c.renamed_constant(name)
 
 
 ## параметры саккадических движений, которые можно определеить на заданной частоте
@@ -23,7 +39,7 @@ class PowerDurationModel:
 # Таблица 4 статьи: Kruchinina A., Xu X. Analysis of saccadic main sequence
 # relationship from a time-optimal control perspective // Russian Journal of
 # Biomechanics. 2026. Vol. 30, no. 1. P. 108-114.
-# DOI 10.15593/RJBiomech/2026.1.10
+# DOI: https://doi.org/10.15593/RJBiomech/2026.1.10
 _POWER_BY_FS: dict[int, PowerDurationModel] = {
     30:   PowerDurationModel(T0_ms=27.10, m=0.25, V0=4.05,  n=1.43),
     60:   PowerDurationModel(T0_ms=22.12, m=0.38, V0=45.68, n=0.78),
@@ -80,37 +96,6 @@ def approx_params_by_fs(fs_hz: float) -> PowerDurationModel:
     return PowerDurationModel(T0_ms=T0, m=m, V0=V0, n=n)
 
 
-#: Сколько отсчётов записи должно приходиться на **саккаду**. Четыре, потому что
-#: по саккаде восстанавливается модель главной последовательности: чтобы судить
-#: о форме движения, а не только о факте его наличия, отсчётов нужно больше.
-N_SAMPLES_SACCADE: int = 4
-
-#: Сколько отсчётов должно приходиться на **перевод взора**. Три: требования
-#: к произвольному переводу взора ниже, чем к саккаде, потому что модель
-#: по нему не восстанавливается -- достаточно уверенно выделить событие.
-#:
-#: Значения намеренно разные, и это не рассогласование: саккада -- движение
-#: глаза относительно черепа, перевод взора включает и движение головы,
-#: и это разные величины с разными требованиями. Прежде оба стояли в коде
-#: голыми числами (4 в сигнатуре модели, 3 в сигнатурах разметки), и разницу
-#: нельзя было отличить от опечатки.
-N_SAMPLES_GAZE_SHIFT: int = 3
-
-#: Минимальная физиологическая длительность фиксации, с. Используется как нижняя
-#: граница интервала, на котором смещение взора ещё считается фиксационным.
-DEFAULT_MIN_FIXATION_DURATION_S: float = 0.050
-
-#: Скорость идеальной фовеальной фиксации, град/с. Физиологический предел: медленнее
-#: этого взор на фиксации не бывает, поэтому порог скорости на фиксации не может
-#: быть строже. Чем выше частота записи, тем ближе достижимый порог к этому
-#: значению; по оценке автора методики оно становится релевантным начиная
-#: примерно с 900 Гц.
-IDEAL_FIXATION_VELOCITY_DEG_S: float = 5.0
-
-#: Пространственный разброс идеальной фовеальной фиксации, град.
-IDEAL_FIXATION_SPREAD_DEG: float = 5.0
-
-
 class MinDetectableSaccade(NamedTuple):
     """Граница разрешающей способности записи при данной частоте.
 
@@ -136,7 +121,7 @@ def min_saccade_minima_by_sampling(
     fs_hz: float,
     n_samples: int = N_SAMPLES_SACCADE,
     return_strict_sampling_duration: bool = False,
-    min_fixation_duration_s: float = DEFAULT_MIN_FIXATION_DURATION_S,
+    min_fixation_duration_s: float = MIN_FIXATION_DURATION_S,
     ideal_fixation_velocity_deg_s: float = IDEAL_FIXATION_VELOCITY_DEG_S,
     ideal_fixation_spread_deg: float = IDEAL_FIXATION_SPREAD_DEG,
 ) -> MinDetectableSaccade:
@@ -250,12 +235,13 @@ def min_saccade_minima_by_sampling(
         model=params,
     )
 
-def max_increment_deg(fs_hz, v_max=900):
+def max_increment_deg(fs_hz, v_max=MAX_EYE_VELOCITY_DEG_S):
     """
     Вычисляет максимальное допустимое приращение координат (в градусах) за один кадр.
     Параметры:
       fs_hz - частота съемки (Гц)
-      v_max - максимальная физиологическая скорость глаза (град/с), по умолчанию 900
+      v_max - максимальная физиологическая скорость глаза (град/с),
+              по умолчанию MAX_EYE_VELOCITY_DEG_S
     Возвращает:
       max_delta - максимальное смещение за 1/fs_hz сек
     """

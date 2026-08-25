@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from eyetracking_analytics import constants as const
 from eyetracking_analytics import eyetracking_funs as ef
 from eyetracking_analytics import for_raw_data as frd
 from eyetracking_analytics import gaze_mark as gm
@@ -27,7 +28,7 @@ from . import synthetic
 DATA_DIR = Path(__file__).parent / "data"
 
 # Пороги, выведенные из модели по частоте записи: так их задаёт методика.
-_N_SAMPLES = mdl.N_SAMPLES_GAZE_SHIFT
+_N_SAMPLES = const.N_SAMPLES_GAZE_SHIFT
 
 
 def _thresholds(fs_hz: float) -> dict[str, float]:
@@ -51,8 +52,12 @@ def _fs_of(df: pd.DataFrame) -> float:
 def _case_spherical(record: str) -> dict[str, pd.DataFrame]:
     df = synthetic.RECORDS[record]()
     th = _thresholds(_fs_of(df))
+    # При анализе данных движения глаза порог скорости называется иначе:
+    # интервалы там -- покой, а не фиксация. Значение то же, эталон не меняется.
+    th_eye = {("rest_velocity_limit_deg_s" if k == "fixation_velocity_limit_deg_s" else k): v
+              for k, v in th.items()}
     alpha, gaze_shifts, fixations = gm.mark_eye_data_with_full_angle_from_angles(
-        df, col_gaze_x="gaze_yaw", col_gaze_y="gaze_pitch", col_time="T_s", deg=True, **th
+        df, col_horizontal="gaze_yaw", col_vertical="gaze_pitch", col_time="T_s", deg=True, **th_eye
     )
     return {
         "alpha": pd.DataFrame({"alpha_deg": alpha}),
@@ -66,8 +71,8 @@ def _case_sigmoid(record: str) -> dict[str, pd.DataFrame]:
     th = _thresholds(_fs_of(df))
     alpha, gaze_shifts, slow_movements = gm.mark_eye_data_with_sigmoid(
         df,
-        col_gaze_x="gaze_yaw",
-        col_gaze_y="gaze_pitch",
+        col_horizontal="gaze_yaw",
+        col_vertical="gaze_pitch",
         col_time="T_s",
         min_peak_velocity_deg_s=th["min_peak_velocity_deg_s"],
         min_amplitude_deg=th["min_amplitude_deg"],
@@ -96,10 +101,10 @@ def _case_direction(record: str, geometry: str) -> dict[str, pd.DataFrame]:
         r = 12.0
         frame = pd.DataFrame({"T_s": df["T_s"], "X": r * uy / ux, "Y": r * uz / ux})
         res = mkp.mark_gaze_events_direction(
-            frame, col_gaze_x="X", col_gaze_y="Y", geometry="plane", r=r, **th)
+            frame, col_horizontal="X", col_vertical="Y", geometry="plane", r=r, **th)
     else:
         res = mkp.mark_gaze_events_direction(
-            df, col_gaze_x="gaze_yaw", col_gaze_y="gaze_pitch", geometry="angles", **th)
+            df, col_horizontal="gaze_yaw", col_vertical="gaze_pitch", geometry="angles", **th)
     return {
         "eccentricity": pd.DataFrame({"deg": res.eccentricity_deg}),
         "azimuth": pd.DataFrame({"deg": res.azimuth_deg}),
@@ -191,14 +196,14 @@ def _case_metrics() -> dict[str, pd.DataFrame]:
     interval_rows = []
     for t1, t2 in windows:
         ex, ey, cov, n_valid, sx, px, sy, py, trend = gm.interval_stats_by_time(
-            df, t1, t2, col_gaze_x="gaze_yaw", col_gaze_y="gaze_pitch", col_time="T_s"
+            df, t1, t2, col_horizontal="gaze_yaw", col_vertical="gaze_pitch", col_time="T_s"
         )
         interval_rows.append({
             "t1": t1, "t2": t2,
             "tr_length": ef.tr_length(df, t1, t2, "gaze_yaw", "gaze_pitch"),
             "std_x": ef.find_std_fx(df, t1, t2, "gaze_yaw"),
-            "mean_gaze_x": ex, "mean_gaze_y": ey, "cov_fro_norm_deg2": float(np.linalg.norm(cov, ord="fro")),
-            "n_valid": n_valid, "slope_gaze_x_deg_s": sx, "p_gaze_x": px, "slope_gaze_y_deg_s": sy, "p_gaze_y": py,
+            "mean_horizontal_deg": ex, "mean_vertical_deg": ey, "cov_fro_norm_deg2": float(np.linalg.norm(cov, ord="fro")),
+            "n_valid": n_valid, "slope_horizontal_deg_s": sx, "p_horizontal": px, "slope_vertical_deg_s": sy, "p_vertical": py,
             "has_trend": trend,
         })
 
@@ -356,7 +361,8 @@ class Tolerance:
     exact_decisions: bool = True
 
 
-# Sigmoid-ветка — единственная, где событие описывается не порогом, а фитом:
+# Разметка на базе аппроксимации движения сигмоидой — единственная, где событие
+# описывается не порогом, а фитом:
 # `curve_fit` (gaze_mark.py) подгоняет логистическую кривую, а границы события
 # вычисляются из её параметров. Поэтому результат наследует точность
 # оптимизатора: между scipy 1.10 и 1.17 параметр наклона `k` расходится на
@@ -390,7 +396,7 @@ def compare(
 
     Схема, число строк, позиции NaN и целочисленные столбцы сравниваются точно
     всегда. Столбцы решений (границы, длительности, счётчики) — точно, если
-    `tol.exact_decisions`; для sigmoid-ветки они вычисляются из параметров фита
+    `tol.exact_decisions`; при аппроксимации сигмоидой они вычисляются из параметров фита
     и потому сравниваются с допуском. Непрерывные величины — с допуском
     `tol.rtol`/`tol.atol`. При `exact=True` всё сравнивается точно: так
     проверяется окружение, в котором эталон и снимался.
