@@ -328,6 +328,38 @@ Separately — the **gaze stabilization coefficient** (`ksv`): the criterion of 
 
 **The primary citation is the code itself**: DOI **10.5281/zenodo.22096316** — it points at all versions and resolves to the latest. The DOI of a particular version is issued separately (1.0.0 — 10.5281/zenodo.22096317), but the first one is what should be cited. The works above are added to this citation according to what exactly was used; one does not replace the other. The machine-readable form of all references is in [`CITATION.cff`](CITATION.cff): the library itself is described by the top-level fields and all the works are collected in `references`; there is deliberately no `preferred-citation` field, so that tools cite the program. On GitHub this file provides the "Cite this repository" button, and the release DOI is issued by Zenodo.
 
+### Ready-made wording
+
+In the text of a paper:
+
+> Kruchinina A. eyetracking_analytics: a library for detection and analysis of eye and gaze movements. Version 1.0.0. 2026. DOI: 10.5281/zenodo.22096316
+
+BibTeX:
+
+```bibtex
+@software{kruchinina_eyetracking_analytics,
+  author    = {Kruchinina, Anna},
+  title     = {eyetracking_analytics: detection and analysis of eye and gaze movements},
+  version   = {1.0.0},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.22096316},
+  url       = {https://github.com/ankorm/eyetracking_analytics}
+}
+```
+
+What to add to this citation depends on what exactly was used:
+
+| What was used | What to add |
+|---|---|
+| any markup: the thresholds are always computed by the model | Kruchinina, Xu, 2026 |
+| the saccade trajectory model (`saccade_model`) | Kruchinina, Yakushev, 2018 and Kruchinina, 2020 |
+| the gaze stabilization coefficient (`ksv`) | Shtefanova, Yakushev, 2008 |
+| the area of the swept region (`bcea_deg2`) | Kruchinina, Polikanova, 2025 |
+
+The bibliographic data of these works are above in this section and in [`CITATION.cff`](CITATION.cff).
+
+
 ## Example of application
 
 The methodology on real material — biathletes shooting from the prone position compared with novices: markup of eye and head movements, integral characteristics of the recording.
