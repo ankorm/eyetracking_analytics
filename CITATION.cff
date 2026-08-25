@@ -6,9 +6,9 @@
 # collected in `references` and are added to the citation according to what
 # exactly was used.
 #
-# NOTE: one field is still empty — the DOI of the library itself, which Zenodo
-# issues once a release is archived there. Until then the file remains valid CFF
-# and the citation of the code works through `repository-code`.
+# The `doi` field holds the CONCEPT DOI: it points at all versions of the library
+# and always resolves to the latest one — that is the DOI to cite. The DOI of a
+# particular version is issued by Zenodo separately (1.0.0 -- 10.5281/zenodo.22096317).
 
 cff-version: 1.2.0
 message: >-
@@ -41,7 +41,7 @@ keywords:
   - saccade main sequence
   - fixation detection
   - oculography
-# doi: 10.5281/zenodo.XXXXXXX   # the release DOI, issued by Zenodo
+doi: 10.5281/zenodo.22096316   # concept DOI: all versions, resolves to the latest
 
 references:
   # The model of the main sequence: Table 4 supplies the parameters

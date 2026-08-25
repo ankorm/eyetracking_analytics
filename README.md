@@ -3,6 +3,7 @@
 > In Russian: [`docs/README-rus.md`](docs/README-rus.md)
 
 [![CI](https://github.com/ankorm/eyetracking_analytics/actions/workflows/ci.yml/badge.svg)](https://github.com/ankorm/eyetracking_analytics/actions/workflows/ci.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22096316.svg)](https://doi.org/10.5281/zenodo.22096316)
 
 A library for the event detection and analysis of **eye and gaze movements**: extraction of gaze shifts, fixations and integral characteristics of a recording, following the author's methodology. The computation of the thresholds builds on a model of the saccadic main sequence and takes the sampling rate into account.
 
@@ -325,7 +326,7 @@ Separately — the **gaze stabilization coefficient** (`ksv`): the criterion of 
 
 > Shtefanova O. Yu., Yakushev A. G. A quality criterion for visual tracking during nystagmus // Moscow University Mechanics Bulletin. — 2008. — Vol. 63, no. 4. — P. 100–102. — [DOI 10.3103/S0027133008040043](https://doi.org/10.3103/S0027133008040043)
 
-**The primary citation is the code itself**, and the works above are added to it according to what exactly was used; one does not replace the other. The machine-readable form of all references is in [`CITATION.cff`](CITATION.cff): the library itself is described by the top-level fields and all the works are collected in `references`; there is deliberately no `preferred-citation` field, so that tools cite the program. On GitHub this file provides the "Cite this repository" button, and the release DOI is issued by Zenodo.
+**The primary citation is the code itself**: DOI **10.5281/zenodo.22096316** — it points at all versions and resolves to the latest. The DOI of a particular version is issued separately (1.0.0 — 10.5281/zenodo.22096317), but the first one is what should be cited. The works above are added to this citation according to what exactly was used; one does not replace the other. The machine-readable form of all references is in [`CITATION.cff`](CITATION.cff): the library itself is described by the top-level fields and all the works are collected in `references`; there is deliberately no `preferred-citation` field, so that tools cite the program. On GitHub this file provides the "Cite this repository" button, and the release DOI is issued by Zenodo.
 
 ## Example of application
 
