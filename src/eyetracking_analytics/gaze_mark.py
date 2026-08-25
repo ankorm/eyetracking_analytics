@@ -794,11 +794,11 @@ def _best_homogeneity_split(
     `score > score_min_with_pvalue`, либо если `score > score_min_alone`
     независимо от p-value.
 
-    Пункт C-9 аудита: происхождение значений `score_min_with_pvalue = 1.0`,
+    Значения `score_min_with_pvalue = 1.0`,
     `score_min_alone = 2.5`, `cov_weight = 0.5`, `alpha_split = 0.01`
     и `min_points = 5` не задокументировано. Они вынесены в параметры,
     чтобы было видно, где применяются, и чтобы их можно было изменить
-    без правки кода; обоснование ожидается от автора методики.
+    без правки кода.
     """
     if i_end - i_start + 1 < 2 * int(min_points):
         return None, np.nan, np.nan
@@ -980,7 +980,7 @@ def _spread_measures(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float]
                предположения о нормальности распределения);
     * `peak` — максимальное расстояние от среднего.
 
-    Возвращаются все три: выбор режима — вопрос методики (пункт C-19), а считать
+    Возвращаются все три: выбор режима — вопрос методики, а считать
     их вместе дешевле, чем пересчитывать при смене режима.
     """
     xa = np.asarray(x, dtype=float)

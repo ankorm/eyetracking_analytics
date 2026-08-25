@@ -229,7 +229,7 @@ The thresholds converge as the rate grows: from 222 Hz both physiological limits
 | `spread_measure` | `"std"` | — | which measure is compared with the threshold: `std` (1σ), `p95`, `peak` |
 | `ideal_fixation_spread_deg` | 5.0 | deg | the spread of an ideal fixation |
 | `spread_limit_deg` | `None` → model | deg | an explicit threshold; overrides the model computation |
-| `drop_invalid_spread` | `False` | — | drop the ones that failed on spread (the criterion is under development) |
+| `drop_invalid_spread` | `False` | — | drop the ones that failed on spread; by default they are only flagged |
 
 **Splitting a heterogeneous interval and merging**
 
@@ -244,8 +244,6 @@ The thresholds converge as the rate grows: from 222 Hz both physiological limits
 | `min_subprocess_duration_s` | `None` → `min_event_duration_s` | s | minimum of a subprocess when splitting |
 | `max_merge_gap_s` | `None` → `min_event_duration_s/2` | s | admissible gap when merging |
 | `MERGE_STAT_TOLERANCE` | 0.2 | — | admissible relative difference of the statistics when merging |
-
-> The origin of the values 1.0, 2.5, 0.5, 0.01, 5 and 0.2 is not documented — item C-9; the justification is awaited from the author of the methodology.
 
 **Trend (drift instead of a fixation)**
 
@@ -428,7 +426,7 @@ The gaze stabilization coefficient is not a measure of this library's own: the c
 
 `MarkupSummary` (`describe_markup`, also the `.summary()` method of the markup result) returns both quantities together with the terms from which they were obtained: `t_total_s`, `n_events`, `event_rate_hz`, `mean_event_duration_s`, `n_intervals`, `intervals_total_duration_s`, `intervals_time_fraction`, `mean_interval_duration_s`, `median_interval_duration_s`, `n_intervals_invalid`, `only_valid`, `params_used`.
 
-Both quantities share one denominator — the whole duration of the recording, from the first sample to the last. Gaps and blinks are not subtracted from it: on a broken recording the fraction of holding time is understated, and this can be seen by comparing `intervals_total_duration_s` with `t_total_s`. Whether to count the intervals flagged as failing on duration or on spread is decided by `only_valid`; by default whatever is in the table is counted, because the selection was made during the markup (`drop_short_fixations`, `drop_invalid_spread`), and the spread criterion is still under development. How many rows are flagged invalid is returned always.
+Both quantities share one denominator — the whole duration of the recording, from the first sample to the last. Gaps and blinks are not subtracted from it: on a broken recording the fraction of holding time is understated, and this can be seen by comparing `intervals_total_duration_s` with `t_total_s`. Whether to count the intervals flagged as failing on duration or on spread is decided by `only_valid`; by default whatever is in the table is counted, because the selection was made during the markup (`drop_short_fixations`, `drop_invalid_spread`), and by default the intervals are only flagged on spread. How many rows are flagged invalid is returned always.
 
 Both quantities depend on the thresholds of the markup, and those on the sampling rate, so they are comparable between recordings of the same rate or after the recordings have been brought to a common rate.
 

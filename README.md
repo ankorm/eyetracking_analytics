@@ -303,7 +303,7 @@ Required: `numpy`, `pandas`, `scipy`. Optional (extras): `fast` — `numba` (acc
 
 **The library is open, version 1.0.0.** The API is used in the author's projects and has been checked on real recordings.
 
-From version 1.0.0 a compatibility promise applies: an incompatible change of the public API or of the numerical results is released only with a major version bump and an explicit note in `CHANGELOG.md`. Some methodological questions remain open — first of all the measure of spatial spread (which of the three to take as the main one, and what the threshold should be) and the origin of the split and merge constants; that is why the spread criterion by default only flags fixations rather than dropping them.
+From version 1.0.0 a compatibility promise applies: an incompatible change of the public API or of the numerical results is released only with a major version bump and an explicit note in `CHANGELOG.md`. Criteria that affect the set of fixations are therefore switched on explicitly: on spread the intervals are only flagged by default, and dropping them is requested with the `drop_invalid_spread` flag.
 
 All changes, marked with whether they alter numerical results, are in `CHANGELOG.md`. The release DOI is issued by Zenodo; until it appears the repository itself can be cited, see [How to cite](#how-to-cite).
 

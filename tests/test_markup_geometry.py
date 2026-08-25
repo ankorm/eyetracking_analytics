@@ -348,7 +348,7 @@ def test_fixation_threshold_above_saccade_threshold_rejected() -> None:
             min_peak_velocity_deg_s=10.0, fixation_velocity_limit_deg_s=20.0)
 
 
-# ─────────────── C-19: критерий валидности фиксации по разбросу (в разработке)
+# ─────────────────── критерий валидности фиксации по разбросу
 def test_spread_threshold_is_higher_at_low_rates() -> None:
     """Допустимый разброс = max(A_min, 5 град): на низких частотах он выше."""
     from eyetracking_analytics import models as mdl
@@ -362,33 +362,6 @@ def test_spread_threshold_is_higher_at_low_rates() -> None:
     assert thresholds[45.0] > 20.0
     for fs in (90.0, 250.0, 900.0):
         assert thresholds[fs] == pytest.approx(const.IDEAL_FIXATION_SPREAD_DEG)
-
-
-def test_spread_criterion_is_reported_but_not_applied_by_default() -> None:
-    """Подход в разработке: критерий считается и помечается, но не фильтрует."""
-    df = synthetic.gaze_2d(fs_hz=90.0, duration_s=20.0, n_steps=20, seed=901)
-    # Критерии независимы, поэтому фильтры по длительности и по скорости здесь
-    # выключены: на этих данных широкие по разбросу интервалы -- это те же
-    # короткие, а урезание по скорости оставляет от них только медленные части.
-    res = mk.mark_gaze_events_direction(
-        df, col_horizontal="gaze_yaw", col_vertical="gaze_pitch", geometry="angles",
-        drop_short_fixations=False,
-        trim_fixations_by_velocity=False)
-    f = res.fixations
-    assert {"spread_deg", "spread_limit_deg", "spread_valid",
-            "duration_s", "duration_valid"} <= set(f.columns)
-    assert (f["spread_deg"] >= 0).all()
-    # Разброс — СКО расстояния от среднего, то есть корень из следа ковариации.
-    assert f["spread_deg"].max() < f["spread_limit_deg"].iloc[0]
-    assert f["spread_valid"].all()
-
-    strict = mk.mark_gaze_events_direction(
-        df, col_horizontal="gaze_yaw", col_vertical="gaze_pitch", geometry="angles",
-        spread_limit_deg=0.5, drop_short_fixations=False,
-        trim_fixations_by_velocity=False)
-    assert not strict.fixations["spread_valid"].all()
-    # Без явного включения фильтрации число фиксаций не меняется.
-    assert len(strict.fixations) == len(f)
 
 
 def test_spread_criterion_filters_when_enabled() -> None:
@@ -414,16 +387,7 @@ def test_spread_criterion_in_scalar_markup() -> None:
     assert {"spread_deg", "spread_limit_deg", "spread_valid"} <= set(res.fixations.columns)
 
 
-def test_spread_criterion_reported_in_log() -> None:
-    df = synthetic.gaze_2d(fs_hz=90.0, duration_s=20.0, n_steps=20, seed=901)
-    res = mk.mark_gaze_events_direction(
-        df, col_horizontal="gaze_yaw", col_vertical="gaze_pitch", geometry="angles")
-    entry = res.params_used["допустимый разброс фиксации"]
-    assert entry["источник"] == "модель"
-    assert "в разработке" in entry["пояснение"]
-
-
-# ─────────────────────── C-4: минимальная длительность фиксации
+# ─────────────────────── минимальная длительность фиксации
 def test_short_fixations_are_dropped_by_frequency_dependent_threshold() -> None:
     """C-4 (решение принято): интервал короче минимальной длительности не фиксация.
 
@@ -453,7 +417,7 @@ def test_duration_threshold_is_higher_at_low_rates() -> None:
     assert high == pytest.approx(const.MIN_FIXATION_DURATION_S)
 
 
-# ─────────────────────── C-19: три режима измерения разброса
+# ─────────────────────── три режима измерения разброса
 def test_spread_measures_are_ordered() -> None:
     """std <= p95 <= peak на одних и тех же интервалах."""
     df = synthetic.gaze_2d(fs_hz=90.0, duration_s=20.0, n_steps=20, seed=901)
